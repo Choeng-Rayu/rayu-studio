@@ -1,0 +1,9 @@
+.actions .shiki {
+  background-color: var(--rayu-elements-actions-code-background) !important;
+}
+
+.shiki {
+  &:not(:has(.actions), .actions *, .mcp-tool-invocation-code *) {
+    background-color: var(--rayu-elements-messages-code-background) !important;
+  }
+}

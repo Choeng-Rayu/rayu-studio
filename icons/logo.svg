@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+<defs><linearGradient id="tileGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9C7DFF"/><stop offset="1" stop-color="#6234BB"/></linearGradient></defs>
+<rect width="16" height="16" rx="3.6" fill="url(#tileGrad)"/>
+<g fill="#fff"><path fill-rule="evenodd" d="M4.15 3.75L11.85 3.75L11.85 9.3L5.75 9.3L5.75 12.25L4.15 12.25ZM5.75 5.35L10.25 5.35L10.25 7.7L5.75 7.7Z"/>
+<path d="M7.05 8.6L11.85 12.25L9.207 12.25L7.05 10.61Z"/></g>
+</svg>
