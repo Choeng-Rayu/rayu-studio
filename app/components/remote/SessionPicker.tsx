@@ -104,8 +104,8 @@ export function SessionPicker(): React.JSX.Element {
         <div className="flex-1 px-4 py-6 text-xs text-rayu-elements-textSecondary leading-relaxed">
           <p className="font-medium text-rayu-elements-textPrimary">No machines yet</p>
           <p className="mt-2">
-            Run <code className="font-mono text-rayu-elements-textPrimary">/web-bridge</code> inside rayu-cli on any
-            machine you have signed in on. It will appear here within a second.
+            Run <code className="font-mono text-rayu-elements-textPrimary">/web-bridge</code> in rayu-cli. Signed-in
+            machines connect directly; others show a QR code you can scan to approve here.
           </p>
         </div>
       ) : (

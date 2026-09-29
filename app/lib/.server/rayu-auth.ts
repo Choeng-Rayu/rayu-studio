@@ -115,11 +115,20 @@ export function clearAuthCookies(request: Request): string[] {
     `rayu_access=; ${cookieAttributes(request, 0)}`,
     `rayu_refresh=; ${cookieAttributes(request, 0)}`,
     `rayu_login_state=; ${cookieAttributes(request, 0)}`,
+    `rayu_login_pair=; ${cookieAttributes(request, 0)}`,
   ];
 }
 
 export function clearLoginStateCookie(request: Request): string {
   return `rayu_login_state=; ${cookieAttributes(request, 0)}`;
+}
+
+export function loginPairCookie(request: Request, pair: string): string {
+  return `rayu_login_pair=${encodeURIComponent(pair)}; ${cookieAttributes(request, 10 * 60)}`;
+}
+
+export function clearLoginPairCookie(request: Request): string {
+  return `rayu_login_pair=; ${cookieAttributes(request, 0)}`;
 }
 
 export function loginStateCookie(request: Request, state: string): string {

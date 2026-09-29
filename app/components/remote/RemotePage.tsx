@@ -5,6 +5,7 @@ import { connectionState, startWebBridge, stopWebBridge } from '~/lib/webBridge/
 import type { BridgeConnectionState } from '~/lib/webBridge/webBridgeTypes';
 import { RemoteChat } from './RemoteChat';
 import { SessionPicker } from './SessionPicker';
+import { PairWorkerCard } from './PairWorkerCard';
 
 /**
  * `/remote` — drive a rayu-cli session from the standalone Studio app.
@@ -61,6 +62,8 @@ export function RemotePage(): React.JSX.Element {
           {banner.text}
         </div>
       )}
+
+      <PairWorkerCard />
 
       <div className="flex-1 flex min-h-0">
         <SessionPicker />

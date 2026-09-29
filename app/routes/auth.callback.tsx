@@ -3,6 +3,7 @@ import { useLoaderData } from '@remix-run/react';
 import {
   appendAuthCookies,
   backendApiBase,
+  clearLoginPairCookie,
   clearLoginStateCookie,
   readCookie,
   sessionCookies,
@@ -12,8 +13,13 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
+  const requestedPair = readCookie(request, 'rayu_login_pair') || '';
+  const pair = /^[A-Za-z0-9_-]{20,80}$/.test(requestedPair) ? requestedPair : '';
   const invalid = () => {
-    const headers = appendAuthCookies(new Headers({ 'Cache-Control': 'no-store' }), [clearLoginStateCookie(request)]);
+    const headers = appendAuthCookies(new Headers({ 'Cache-Control': 'no-store' }), [
+      clearLoginStateCookie(request),
+      clearLoginPairCookie(request),
+    ]);
     return json(
       { error: 'This sign-in link is invalid, expired, or already used. Please try signing in again.' },
       { status: 400, headers },
@@ -59,9 +65,10 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
     const headers = appendAuthCookies(new Headers({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }), [
       ...sessionCookies(request, tokens as { accessToken: string; refreshToken: string; expiresAt: number }),
       clearLoginStateCookie(request),
+      clearLoginPairCookie(request),
     ]);
 
-    return redirect('/', { headers });
+    return redirect(pair ? `/remote?pair=${encodeURIComponent(pair)}` : '/', { headers });
   } catch {
     return json({ error: 'Rayu authentication is temporarily unavailable. Please try again.' }, { status: 503 });
   }

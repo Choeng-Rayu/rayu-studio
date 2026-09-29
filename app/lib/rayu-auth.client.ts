@@ -7,7 +7,21 @@ export interface StudioRayuUser {
 
 export async function startRayuSignIn(): Promise<void> {
   const desktop = typeof window !== 'undefined' && !!window.ipc?.openExternal;
-  const response = await fetch(`/api/auth/start${desktop ? '?client=desktop' : ''}`, { cache: 'no-store' });
+  const params = new URLSearchParams();
+
+  if (desktop) {
+    params.set('client', 'desktop');
+  }
+
+  if (window.location.pathname === '/remote') {
+    const pair = new URLSearchParams(window.location.search).get('pair');
+
+    if (pair && /^[A-Za-z0-9_-]{20,80}$/.test(pair)) {
+      params.set('pair', pair);
+    }
+  }
+
+  const response = await fetch(`/api/auth/start?${params}`, { cache: 'no-store' });
   const result = (await response.json()) as { url?: string; error?: string };
 
   if (!response.ok || !result.url) {
