@@ -430,6 +430,18 @@ export const ModelSelector = ({
     }
   }, [providerList, provider, setProvider, modelList, setModel]);
 
+  /*
+   * The saved model can belong to a different provider, and Rayu's models
+   * arrive asynchronously after sign-in. Select a valid model once available.
+   */
+  useEffect(() => {
+    const providerModels = modelList.filter((item) => item.provider === provider?.name);
+
+    if (providerModels.length > 0 && !providerModels.some((item) => item.name === model)) {
+      setModel?.(providerModels[0].name);
+    }
+  }, [provider?.name, model, modelList, setModel]);
+
   if (providerList.length === 0) {
     return (
       <div className="mb-2 p-4 rounded-lg border border-rayu-elements-borderColor bg-rayu-elements-prompt-background text-rayu-elements-textPrimary">
@@ -658,7 +670,9 @@ export const ModelSelector = ({
           tabIndex={0}
         >
           <div className="flex items-center justify-between">
-            <div className="truncate">{modelList.find((m) => m.name === model)?.label || 'Select model'}</div>
+            <div className="truncate">
+              {modelList.find((m) => m.provider === provider?.name && m.name === model)?.label || 'Select model'}
+            </div>
             <div
               className={classNames(
                 'i-ph:caret-down w-4 h-4 text-rayu-elements-textSecondary opacity-75',
@@ -688,7 +702,7 @@ export const ModelSelector = ({
                       'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all',
                       'hover:bg-rayu-elements-background-depth-3',
                       showFreeModelsOnly
-                        ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                        ? 'bg-accent-500/20 text-accent-500 dark:text-accent-400 border border-accent-500/30'
                         : 'bg-rayu-elements-background-depth-3 text-rayu-elements-textSecondary border border-rayu-elements-borderColor',
                     )}
                   >
@@ -849,7 +863,7 @@ export const ModelSelector = ({
                       </div>
                       <div className="flex items-center gap-1 ml-2">
                         {isModelLikelyFree(modelOption, provider?.name) && (
-                          <span className="i-ph:gift text-xs text-purple-400" title="Free model" />
+                          <span className="i-ph:gift text-xs text-accent-500 dark:text-accent-400" title="Free model" />
                         )}
                         {model === modelOption.name && (
                           <span className="i-ph:check text-xs text-green-500" title="Selected" />

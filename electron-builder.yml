@@ -1,5 +1,9 @@
 appId: com.rayucode.app
 productName: RayuCode
+protocols:
+  - name: Rayu Studio sign-in
+    schemes:
+      - rayustudio
 directories:
   buildResources: build
   output: dist

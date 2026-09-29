@@ -33,6 +33,7 @@ import { ChatBox } from './ChatBox';
 import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
+import type { RayuProviderStatus } from '~/lib/rayu/provider-status';
 
 const TEXTAREA_MIN_HEIGHT = 76;
 
@@ -82,6 +83,8 @@ interface BaseChatProps {
   setSelectedElement?: (element: ElementInfo | null) => void;
   addToolResult?: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   onWebSearchResult?: (result: string) => void;
+  rayuSignedIn?: boolean | null;
+  onModelsLoaded?: (models: ModelInfo[] | null, rayuStatus?: RayuProviderStatus) => void;
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -132,6 +135,8 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         throw new Error('addToolResult not implemented');
       },
       onWebSearchResult,
+      rayuSignedIn,
+      onModelsLoaded,
     },
     ref,
   ) => {
@@ -143,6 +148,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
     const [transcript, setTranscript] = useState('');
     const [isModelLoading, setIsModelLoading] = useState<string | undefined>('all');
+    const [rayuStatus, setRayuStatus] = useState<RayuProviderStatus>('unavailable');
+    const [modelError, setModelError] = useState('');
+    const [modelRetry, setModelRetry] = useState(0);
     const [progressAnnotations, setProgressAnnotations] = useState<ProgressAnnotation[]>([]);
     const expoUrl = useStore(expoUrlAtom);
     const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -202,7 +210,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     }, []);
 
     useEffect(() => {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && provider?.name && rayuSignedIn !== null) {
         let parsedApiKeys: Record<string, string> | undefined = {};
 
         try {
@@ -213,21 +221,74 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
           Cookies.remove('apiKeys');
         }
 
-        setIsModelLoading('all');
-        fetch('/api/models')
-          .then((response) => response.json())
+        const controller = new AbortController();
+        const providerName = provider.name;
+        setIsModelLoading(providerName);
+        setModelError('');
+        setModelList([]);
+        onModelsLoaded?.(null);
+
+        /*
+         * Fetch the selected provider only. Waiting for every configured
+         * provider made Rayu's ready catalog depend on slow/unconfigured APIs.
+         */
+        fetch(`/api/models/${encodeURIComponent(providerName)}`, { signal: controller.signal, cache: 'no-store' })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Model catalog request failed (${response.status}).`);
+            }
+
+            return response.json();
+          })
           .then((data) => {
-            const typedData = data as { modelList: ModelInfo[] };
+            const typedData = data as {
+              modelList: ModelInfo[];
+              rayuStatus?: RayuProviderStatus;
+              providerError?: string;
+            };
+
+            if (!Array.isArray(typedData.modelList)) {
+              throw new Error('Invalid model catalog response.');
+            }
+
             setModelList(typedData.modelList);
+            setModelError(typedData.providerError || '');
+
+            if (providerName === 'Rayu') {
+              setRayuStatus(typedData.rayuStatus || 'unavailable');
+            }
+
+            onModelsLoaded?.(
+              typedData.modelList,
+              providerName === 'Rayu' ? typedData.rayuStatus || 'unavailable' : undefined,
+            );
           })
           .catch((error) => {
+            if (controller.signal.aborted) {
+              return;
+            }
+
             console.error('Error fetching model list:', error);
+            setModelError('Could not load models. Check the Studio server connection and retry.');
+            setModelList([]);
+
+            if (providerName === 'Rayu') {
+              setRayuStatus('unavailable');
+            }
+
+            onModelsLoaded?.([], providerName === 'Rayu' ? 'unavailable' : undefined);
           })
           .finally(() => {
-            setIsModelLoading(undefined);
+            if (!controller.signal.aborted) {
+              setIsModelLoading(undefined);
+            }
           });
+
+        return () => controller.abort();
       }
-    }, [providerList, provider]);
+
+      return undefined;
+    }, [provider?.name, rayuSignedIn, modelRetry, onModelsLoaded]);
 
     const onApiKeysChange = async (providerName: string, apiKey: string) => {
       const newApiKeys = { ...apiKeys, [providerName]: apiKey };
@@ -240,17 +301,31 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
 
       try {
         const response = await fetch(`/api/models/${encodeURIComponent(providerName)}`);
+
+        if (!response.ok) {
+          throw new Error(`Model catalog request failed (${response.status}).`);
+        }
+
         const data = await response.json();
-        providerModels = (data as { modelList: ModelInfo[] }).modelList;
+
+        if (!Array.isArray((data as { modelList?: ModelInfo[] }).modelList)) {
+          throw new Error('Invalid model catalog response.');
+        }
+
+        const typedData = data as { modelList: ModelInfo[]; providerError?: string };
+        providerModels = typedData.modelList;
+        setModelError(typedData.providerError || '');
       } catch (error) {
         console.error('Error loading dynamic models for:', providerName, error);
+        setModelError(`Could not load ${providerName} models. Retry after checking the provider connection.`);
+        setIsModelLoading(undefined);
+
+        return;
       }
 
       // Only update models for the specific provider
-      setModelList((prevModels) => {
-        const otherModels = prevModels.filter((model) => model.provider !== providerName);
-        return [...otherModels, ...providerModels];
-      });
+      setModelList(providerModels);
+      onModelsLoaded?.(providerModels);
       setIsModelLoading(undefined);
     };
 
@@ -437,6 +512,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   modelList={modelList}
                   apiKeys={apiKeys}
                   isModelLoading={isModelLoading}
+                  rayuStatus={rayuStatus}
+                  modelError={modelError}
+                  onRetryModels={() => setModelRetry((value) => value + 1)}
                   onApiKeysChange={onApiKeysChange}
                   uploadedFiles={uploadedFiles}
                   setUploadedFiles={setUploadedFiles}

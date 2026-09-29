@@ -4,10 +4,13 @@ import { Dialog, DialogRoot, DialogClose, DialogTitle, DialogButton } from '~/co
 import { IconButton } from '~/components/ui/IconButton';
 import { useMCPStore } from '~/lib/stores/mcp';
 import McpServerList from '~/components/@settings/tabs/mcp/McpServerList';
+import { configuredMcpServerEntries } from './mcpConnections';
 
 export function McpTools() {
   const isInitialized = useMCPStore((state) => state.isInitialized);
   const serverTools = useMCPStore((state) => state.serverTools);
+  const settings = useMCPStore((state) => state.settings);
+  const storeError = useMCPStore((state) => state.error);
   const initialize = useMCPStore((state) => state.initialize);
   const checkServersAvailabilities = useMCPStore((state) => state.checkServersAvailabilities);
 
@@ -41,15 +44,26 @@ export function McpTools() {
 
   const handleDialogOpen = (open: boolean) => {
     setIsDialogOpen(open);
+
+    if (open && isInitialized && Object.keys(settings.mcpConfig?.mcpServers || {}).length > 0) {
+      void checkServerAvailability();
+    }
   };
 
-  const serverEntries = useMemo(() => Object.entries(serverTools), [serverTools]);
+  /*
+   * Configuration is persistent; connection status is process-local. Never
+   * describe a configured server as "not configured" after a server restart.
+   */
+  const serverEntries = useMemo(
+    () => configuredMcpServerEntries(settings.mcpConfig, serverTools),
+    [settings.mcpConfig, serverTools],
+  );
 
   return (
     <div className="relative">
       <div className="flex">
         <IconButton
-          onClick={() => setIsDialogOpen(!isDialogOpen)}
+          onClick={() => handleDialogOpen(!isDialogOpen)}
           title="MCP Tools Available"
           disabled={!isInitialized}
           className="transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -99,7 +113,6 @@ export function McpTools() {
                       checkingServers={isCheckingServers}
                       expandedServer={expandedServer}
                       serverEntries={serverEntries}
-                      onlyShowAvailableServers={true}
                       toggleServerExpanded={toggleServerExpanded}
                     />
                   ) : (
@@ -110,7 +123,13 @@ export function McpTools() {
                   )}
                 </div>
 
-                <div>{error && <p className="mt-2 text-sm text-rayu-elements-icon-error">{error}</p>}</div>
+                <div>
+                  {(error || storeError) && (
+                    <p className="mt-2 text-sm text-rayu-elements-icon-error" role="alert">
+                      {error || storeError}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 mt-6">

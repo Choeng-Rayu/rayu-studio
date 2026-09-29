@@ -20,6 +20,7 @@ import {
   migrateLegacyLocks,
   clearCache,
 } from '~/lib/persistence/lockedFiles';
+import { getBrowserLocalStorage } from '~/lib/persistence/localStorage';
 import { getCurrentChatId } from '~/utils/fileLocks';
 
 const logger = createScopedLogger('FilesStore');
@@ -78,8 +79,10 @@ export class FilesStore {
 
     // Load deleted paths from localStorage if available
     try {
-      if (typeof localStorage !== 'undefined') {
-        const deletedPathsJson = localStorage.getItem('rayu-deleted-paths');
+      const storage = getBrowserLocalStorage();
+
+      if (storage) {
+        const deletedPathsJson = storage.getItem('rayu-deleted-paths');
 
         if (deletedPathsJson) {
           const deletedPaths = JSON.parse(deletedPathsJson);
@@ -923,8 +926,10 @@ export class FilesStore {
   // method to persist deleted paths to localStorage
   #persistDeletedPaths() {
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('rayu-deleted-paths', JSON.stringify([...this.#deletedPaths]));
+      const storage = getBrowserLocalStorage();
+
+      if (storage) {
+        storage.setItem('rayu-deleted-paths', JSON.stringify([...this.#deletedPaths]));
       }
     } catch (error) {
       logger.error('Failed to persist deleted paths to localStorage', error);

@@ -14,6 +14,7 @@ import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
+import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -40,6 +41,24 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 }
 
 async function chatAction({ context, request }: ActionFunctionArgs) {
+  let rayuAuth;
+
+  try {
+    rayuAuth = await getRayuAuth(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+  } catch {
+    return Response.json(
+      { error: true, message: 'Rayu authentication is temporarily unavailable.', statusCode: 503 },
+      { status: 503 },
+    );
+  }
+
+  if (!rayuAuth) {
+    return Response.json(
+      { error: true, message: 'Sign in to your Rayu account before sending a prompt.', statusCode: 401 },
+      { status: 401 },
+    );
+  }
+
   const streamRecovery = new StreamRecoveryManager({
     timeout: 45000,
     maxRetries: 2,
@@ -68,7 +87,9 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     }>();
 
   const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
+  const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}') as Record<string, string>;
+  apiKeys.Rayu = rayuAuth.accessToken;
+
   const providerSettings: Record<string, IProviderSetting> = JSON.parse(
     parseCookies(cookieHeader || '').providers || '{}',
   );
@@ -418,14 +439,19 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       }),
     );
 
-    return new Response(dataStream, {
-      status: 200,
-      headers: {
+    const headers = appendAuthCookies(
+      new Headers({
         'Content-Type': 'text/event-stream; charset=utf-8',
         Connection: 'keep-alive',
         'Cache-Control': 'no-cache',
         'Text-Encoding': 'chunked',
-      },
+      }),
+      rayuAuth.setCookies,
+    );
+
+    return new Response(dataStream, {
+      status: 200,
+      headers,
     });
   } catch (error: any) {
     logger.error(error);

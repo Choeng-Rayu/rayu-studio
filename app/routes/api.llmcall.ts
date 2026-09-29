@@ -8,18 +8,24 @@ import { LLMManager } from '~/lib/modules/llm/manager';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
 import { createScopedLogger } from '~/utils/logger';
+import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 
 export async function action(args: ActionFunctionArgs) {
   return llmCallAction(args);
 }
 
-async function getModelList(options: {
-  apiKeys?: Record<string, string>;
-  providerSettings?: Record<string, IProviderSetting>;
-  serverEnv?: Record<string, string>;
-}) {
+async function getModelList(
+  options: {
+    apiKeys?: Record<string, string>;
+    providerSettings?: Record<string, IProviderSetting>;
+    serverEnv?: Record<string, string>;
+  },
+  providerName: string,
+) {
   const llmManager = LLMManager.getInstance(import.meta.env);
-  return llmManager.updateModelList(options);
+  const selectedProvider = llmManager.getProvider(providerName);
+
+  return selectedProvider ? llmManager.getModelListFromProvider(selectedProvider, options) : [];
 }
 
 const logger = createScopedLogger('api.llmcall');
@@ -65,6 +71,29 @@ function validateTokenLimits(modelDetails: ModelInfo, requestedTokens: number): 
 }
 
 async function llmCallAction({ context, request }: ActionFunctionArgs) {
+  let rayuAuth;
+
+  try {
+    rayuAuth = await getRayuAuth(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+  } catch {
+    return Response.json(
+      { error: true, message: 'Rayu authentication is temporarily unavailable.', statusCode: 503 },
+      { status: 503 },
+    );
+  }
+
+  if (!rayuAuth) {
+    return Response.json(
+      { error: true, message: 'Sign in to your Rayu account before generating text.', statusCode: 401 },
+      { status: 401 },
+    );
+  }
+
+  const sessionResponse = (body: BodyInit, init: ResponseInit = {}) => {
+    const headers = appendAuthCookies(new Headers(init.headers), rayuAuth.setCookies);
+    return new Response(body, { ...init, headers });
+  };
+
   const { system, message, model, provider, streamOutput } = await request.json<{
     system: string;
     message: string;
@@ -92,6 +121,8 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = getApiKeysFromCookie(cookieHeader);
+  apiKeys.Rayu = rayuAuth.accessToken;
+
   const providerSettings = getProviderSettingsFromCookie(cookieHeader);
 
   if (streamOutput) {
@@ -111,7 +142,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         providerSettings,
       });
 
-      return new Response(result.textStream, {
+      return sessionResponse(result.textStream, {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
@@ -121,7 +152,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
       console.log(error);
 
       if (error instanceof Error && error.message?.includes('API key')) {
-        throw new Response('Invalid or missing API key', {
+        throw sessionResponse('Invalid or missing API key', {
           status: 401,
           statusText: 'Unauthorized',
         });
@@ -151,8 +182,11 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
     }
   } else {
     try {
-      const models = await getModelList({ apiKeys, providerSettings, serverEnv: context.cloudflare?.env as any });
-      const modelDetails = models.find((m: ModelInfo) => m.name === model);
+      const models = await getModelList(
+        { apiKeys, providerSettings, serverEnv: context.cloudflare?.env as any },
+        providerName,
+      );
+      const modelDetails = models.find((m: ModelInfo) => m.provider === providerName && m.name === model);
 
       if (!modelDetails) {
         throw new Error('Model not found');
@@ -232,7 +266,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
       const result = await generateText(finalParams);
       logger.info(`Generated response`);
 
-      return new Response(JSON.stringify(result), {
+      return sessionResponse(JSON.stringify(result), {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
@@ -250,7 +284,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
       };
 
       if (error instanceof Error && error.message?.includes('API key')) {
-        return new Response(
+        return sessionResponse(
           JSON.stringify({
             ...errorResponse,
             message: 'Invalid or missing API key',
@@ -273,7 +307,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
           error.message?.includes('exceeds') ||
           error.message?.includes('maximum'))
       ) {
-        return new Response(
+        return sessionResponse(
           JSON.stringify({
             ...errorResponse,
             message: `Token limit error: ${error.message}. Try reducing your request size or using a model with higher token limits.`,
@@ -288,7 +322,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         );
       }
 
-      return new Response(JSON.stringify(errorResponse), {
+      return sessionResponse(JSON.stringify(errorResponse), {
         status: errorResponse.statusCode,
         headers: { 'Content-Type': 'application/json' },
         statusText: 'Error',

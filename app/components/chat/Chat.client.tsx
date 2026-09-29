@@ -16,6 +16,8 @@ import Cookies from 'js-cookie';
 import { debounce } from '~/utils/debounce';
 import { useSettings } from '~/lib/hooks/useSettings';
 import type { ProviderInfo } from '~/types/model';
+import type { ModelInfo } from '~/lib/modules/llm/types';
+import type { RayuProviderStatus } from '~/lib/rayu/provider-status';
 import { useSearchParams } from '@remix-run/react';
 import { createSampler } from '~/utils/sampler';
 import { getTemplates, selectStarterTemplate } from '~/utils/selectStarterTemplate';
@@ -28,6 +30,7 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
+import { loadRayuUser, startRayuSignIn } from '~/lib/rayu-auth.client';
 
 const logger = createScopedLogger('Chat');
 
@@ -86,6 +89,7 @@ export const ChatImpl = memo(
     useShortcuts();
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const manualProviderSelection = useRef(false);
     const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
@@ -113,6 +117,18 @@ export const ChatImpl = memo(
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+    const [rayuSignedIn, setRayuSignedIn] = useState<boolean | null>(null);
+    const [availableModels, setAvailableModels] = useState<ModelInfo[] | null>(null);
+    const [rayuProviderStatus, setRayuProviderStatus] = useState<RayuProviderStatus>('unavailable');
+    const handleModelsLoaded = useCallback((models: ModelInfo[] | null, status?: RayuProviderStatus) => {
+      setAvailableModels(models);
+
+      if (status) {
+        setRayuProviderStatus(status);
+      }
+    }, []);
+    const [showSignInPrompt, setShowSignInPrompt] = useState(false);
+    const [signInError, setSignInError] = useState('');
     const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
@@ -177,19 +193,53 @@ export const ChatImpl = memo(
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
     useEffect(() => {
-      const prompt = searchParams.get('prompt');
+      let active = true;
+      const refreshAuth = async () => {
+        const user = await loadRayuUser().catch(() => null);
 
-      // console.log(prompt, searchParams, model, provider);
+        if (active) {
+          setRayuSignedIn(!!user);
+        }
+      };
+      void refreshAuth();
+      window.addEventListener('rayu-auth-change', refreshAuth);
+
+      return () => {
+        active = false;
+        window.removeEventListener('rayu-auth-change', refreshAuth);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (rayuSignedIn !== true || manualProviderSelection.current) {
+        return;
+      }
+
+      const hosted = PROVIDER_LIST.find((item) => item.name === 'Rayu') as ProviderInfo | undefined;
+
+      if (hosted) {
+        if (provider.name !== hosted.name) {
+          setProvider(hosted);
+        }
+
+        if (Cookies.get('selectedProvider') !== hosted.name) {
+          Cookies.set('selectedProvider', hosted.name, { expires: 30 });
+        }
+      }
+    }, [rayuSignedIn, provider.name]);
+
+    useEffect(() => {
+      const prompt = searchParams.get('prompt');
 
       if (prompt) {
         setSearchParams({});
-        runAnimation();
-        append({
-          role: 'user',
-          content: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${prompt}`,
-        });
+        sessionStorage.setItem('rayu_pending_prompt', JSON.stringify({ text: prompt }));
+
+        if (rayuSignedIn === false) {
+          setShowSignInPrompt(true);
+        }
       }
-    }, [model, provider, searchParams]);
+    }, [searchParams, rayuSignedIn, setSearchParams]);
 
     const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
     const { parsedMessages, parseMessages } = useMessageParser();
@@ -393,9 +443,41 @@ export const ChatImpl = memo(
         return;
       }
 
+      if (rayuSignedIn !== true) {
+        sessionStorage.setItem('rayu_pending_prompt', JSON.stringify({ text: messageContent }));
+        setShowSignInPrompt(true);
+        setSignInError('');
+
+        return;
+      }
+
       if (isLoading) {
         abort();
         return;
+      }
+
+      if (provider.name === 'Rayu' && rayuProviderStatus === 'upgrade-required') {
+        toast.error(
+          'Your Rayu plan does not include hosted models. Upgrade or add credits, or choose another provider.',
+        );
+        return;
+      }
+
+      const providerModels = availableModels?.filter((item) => item.provider === provider.name) ?? [];
+      const chosenModel = providerModels.find((item) => item.name === model)?.name || providerModels[0]?.name;
+
+      if (!chosenModel) {
+        toast.error(
+          availableModels === null
+            ? 'Models are still loading. Please try again.'
+            : `No usable models are available for ${provider.name}. Check the provider status and retry.`,
+        );
+        return;
+      }
+
+      if (chosenModel !== model) {
+        setModel(chosenModel);
+        Cookies.set('selectedModel', chosenModel, { expires: 30 });
       }
 
       let finalMessageContent = messageContent;
@@ -415,8 +497,13 @@ export const ChatImpl = memo(
         if (autoSelectTemplate) {
           const { template, title } = await selectStarterTemplate({
             message: finalMessageContent,
-            model,
+            model: chosenModel,
             provider,
+          }).catch((selectionError) => {
+            logger.warn('Starter template selection failed; continuing with a blank project', selectionError);
+            toast.warning('Could not select a starter template. Continuing with a blank project.');
+
+            return { template: 'blank', title: '' };
           });
 
           if (template !== 'blank') {
@@ -432,7 +519,7 @@ export const ChatImpl = memo(
 
             if (temResp) {
               const { assistantMessage, userMessage } = temResp;
-              const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
+              const userMessageText = `[Model: ${chosenModel}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
 
               setMessages([
                 {
@@ -449,7 +536,7 @@ export const ChatImpl = memo(
                 {
                   id: `3-${new Date().getTime()}`,
                   role: 'user',
-                  content: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userMessage}`,
+                  content: `[Model: ${chosenModel}]\n\n[Provider: ${provider.name}]\n\n${userMessage}`,
                   annotations: ['hidden'],
                 },
               ]);
@@ -477,7 +564,7 @@ export const ChatImpl = memo(
         }
 
         // If autoSelectTemplate is disabled or template selection failed, proceed with normal message
-        const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
+        const userMessageText = `[Model: ${chosenModel}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
         const attachments = uploadedFiles.length > 0 ? await filesToAttachments(uploadedFiles) : undefined;
 
         setMessages([
@@ -514,7 +601,7 @@ export const ChatImpl = memo(
 
       if (modifiedFiles !== undefined) {
         const userUpdateArtifact = filesToArtifacts(modifiedFiles, `${Date.now()}`);
-        const messageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userUpdateArtifact}${finalMessageContent}`;
+        const messageText = `[Model: ${chosenModel}]\n\n[Provider: ${provider.name}]\n\n${userUpdateArtifact}${finalMessageContent}`;
 
         const attachmentOptions =
           uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : undefined;
@@ -530,7 +617,7 @@ export const ChatImpl = memo(
 
         workbenchStore.resetAllFileModifications();
       } else {
-        const messageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
+        const messageText = `[Model: ${chosenModel}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
 
         const attachmentOptions =
           uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : undefined;
@@ -555,6 +642,40 @@ export const ChatImpl = memo(
 
       textareaRef.current?.blur();
     };
+
+    useEffect(() => {
+      if (
+        rayuSignedIn !== true ||
+        isLoading ||
+        Cookies.get('selectedProvider') !== provider.name ||
+        (provider.name === 'Rayu' && rayuProviderStatus === 'upgrade-required') ||
+        !availableModels?.some((item) => item.provider === provider.name)
+      ) {
+        return;
+      }
+
+      const raw = sessionStorage.getItem('rayu_pending_prompt');
+
+      if (!raw) {
+        return;
+      }
+
+      /*
+       * Clear before sending so React Strict Mode, retries, or a rerender cannot
+       * submit the resumed prompt twice.
+       */
+      sessionStorage.removeItem('rayu_pending_prompt');
+
+      try {
+        const pending = JSON.parse(raw) as { text?: string };
+
+        if (pending.text?.trim()) {
+          void sendMessage({} as React.UIEvent, pending.text);
+        }
+      } catch {
+        sessionStorage.removeItem('rayu_pending_prompt');
+      }
+    }, [rayuSignedIn, isLoading, availableModels, provider.name, rayuProviderStatus, sendMessage]);
 
     /**
      * Handles the change event for the textarea and updates the input state.
@@ -590,6 +711,7 @@ export const ChatImpl = memo(
     };
 
     const handleProviderChange = (newProvider: ProviderInfo) => {
+      manualProviderSelection.current = true;
       setProvider(newProvider);
       Cookies.set('selectedProvider', newProvider.name, { expires: 30 });
     };
@@ -608,78 +730,128 @@ export const ChatImpl = memo(
       [input, handleInputChange],
     );
 
-    return (
-      <BaseChat
-        ref={animationScope}
-        textareaRef={textareaRef}
-        input={input}
-        showChat={showChat}
-        chatStarted={chatStarted}
-        isStreaming={isLoading || fakeLoading}
-        onStreamingChange={(streaming) => {
-          streamingState.set(streaming);
-        }}
-        enhancingPrompt={enhancingPrompt}
-        promptEnhanced={promptEnhanced}
-        sendMessage={sendMessage}
-        model={model}
-        setModel={handleModelChange}
-        provider={provider}
-        setProvider={handleProviderChange}
-        providerList={activeProviders}
-        handleInputChange={(e) => {
-          onTextareaChange(e);
-          debouncedCachePrompt(e);
-        }}
-        handleStop={abort}
-        description={description}
-        importChat={importChat}
-        exportChat={exportChat}
-        messages={messages.map((message, i) => {
-          if (message.role === 'user') {
-            return message;
-          }
+    const handleRayuSignIn = async () => {
+      setSignInError('');
 
-          return {
-            ...message,
-            content: parsedMessages[i] || '',
-          };
-        })}
-        enhancePrompt={() => {
-          enhancePrompt(
-            input,
-            (input) => {
-              setInput(input);
-              scrollTextArea();
-            },
-            model,
-            provider,
-            apiKeys,
-          );
-        }}
-        uploadedFiles={uploadedFiles}
-        setUploadedFiles={setUploadedFiles}
-        imageDataList={imageDataList}
-        setImageDataList={setImageDataList}
-        actionAlert={actionAlert}
-        clearAlert={() => workbenchStore.clearAlert()}
-        supabaseAlert={supabaseAlert}
-        clearSupabaseAlert={() => workbenchStore.clearSupabaseAlert()}
-        deployAlert={deployAlert}
-        clearDeployAlert={() => workbenchStore.clearDeployAlert()}
-        llmErrorAlert={llmErrorAlert}
-        clearLlmErrorAlert={clearApiErrorAlert}
-        data={chatData}
-        chatMode={chatMode}
-        setChatMode={setChatMode}
-        append={append}
-        designScheme={designScheme}
-        setDesignScheme={setDesignScheme}
-        selectedElement={selectedElement}
-        setSelectedElement={setSelectedElement}
-        addToolResult={addToolResult}
-        onWebSearchResult={handleWebSearchResult}
-      />
+      try {
+        await startRayuSignIn();
+      } catch (cause) {
+        setSignInError(cause instanceof Error ? cause.message : String(cause));
+      }
+    };
+
+    return (
+      <>
+        {showSignInPrompt && (
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rayu-signin-title"
+          >
+            <section className="w-full max-w-md rounded-xl border border-rayu-elements-borderColor bg-rayu-elements-background-depth-1 p-6 shadow-xl">
+              <h2 id="rayu-signin-title" className="text-lg font-semibold text-rayu-elements-textPrimary">
+                Sign in to continue
+              </h2>
+              <p className="mt-2 text-sm text-rayu-elements-textSecondary">
+                Sign in to your Rayu account before using Studio. Your pending prompt will be sent once after sign-in.
+              </p>
+              {signInError && (
+                <p className="mt-3 text-sm text-red-400" role="alert">
+                  {signInError}
+                </p>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  className="rounded-md border border-rayu-elements-borderColor px-3 py-2 text-sm text-rayu-elements-textPrimary"
+                  onClick={() => setShowSignInPrompt(false)}
+                >
+                  Not now
+                </button>
+                <button
+                  className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white"
+                  onClick={() => void handleRayuSignIn()}
+                >
+                  Sign in with Rayu
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+        <BaseChat
+          ref={animationScope}
+          textareaRef={textareaRef}
+          input={input}
+          showChat={showChat}
+          chatStarted={chatStarted}
+          isStreaming={isLoading || fakeLoading}
+          onStreamingChange={(streaming) => {
+            streamingState.set(streaming);
+          }}
+          enhancingPrompt={enhancingPrompt}
+          promptEnhanced={promptEnhanced}
+          sendMessage={sendMessage}
+          model={model}
+          setModel={handleModelChange}
+          provider={provider}
+          setProvider={handleProviderChange}
+          providerList={activeProviders}
+          rayuSignedIn={rayuSignedIn}
+          onModelsLoaded={handleModelsLoaded}
+          handleInputChange={(e) => {
+            onTextareaChange(e);
+            debouncedCachePrompt(e);
+          }}
+          handleStop={abort}
+          description={description}
+          importChat={importChat}
+          exportChat={exportChat}
+          messages={messages.map((message, i) => {
+            if (message.role === 'user') {
+              return message;
+            }
+
+            return {
+              ...message,
+              content: parsedMessages[i] || '',
+            };
+          })}
+          enhancePrompt={() => {
+            enhancePrompt(
+              input,
+              (input) => {
+                setInput(input);
+                scrollTextArea();
+              },
+              model,
+              provider,
+              apiKeys,
+            );
+          }}
+          uploadedFiles={uploadedFiles}
+          setUploadedFiles={setUploadedFiles}
+          imageDataList={imageDataList}
+          setImageDataList={setImageDataList}
+          actionAlert={actionAlert}
+          clearAlert={() => workbenchStore.clearAlert()}
+          supabaseAlert={supabaseAlert}
+          clearSupabaseAlert={() => workbenchStore.clearSupabaseAlert()}
+          deployAlert={deployAlert}
+          clearDeployAlert={() => workbenchStore.clearDeployAlert()}
+          llmErrorAlert={llmErrorAlert}
+          clearLlmErrorAlert={clearApiErrorAlert}
+          data={chatData}
+          chatMode={chatMode}
+          setChatMode={setChatMode}
+          append={append}
+          designScheme={designScheme}
+          setDesignScheme={setDesignScheme}
+          selectedElement={selectedElement}
+          setSelectedElement={setSelectedElement}
+          addToolResult={addToolResult}
+          onWebSearchResult={handleWebSearchResult}
+        />
+      </>
     );
   },
 );

@@ -6,6 +6,9 @@ const ipc = {
   invoke(...args: any[]) {
     return ipcRenderer.invoke('ipcTest', ...args);
   },
+  openExternal(url: string) {
+    return ipcRenderer.invoke('open-external', url) as Promise<void>;
+  },
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   on(channel: string, func: Function) {
     const f = (event: IpcRendererEvent, ...args: any[]) => func(...[event, ...args]);

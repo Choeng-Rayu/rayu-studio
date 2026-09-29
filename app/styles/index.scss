@@ -16,12 +16,14 @@ body {
 
 :root {
   --gradient-opacity: 0.8;
-  --primary-color: rgba(158, 117, 240, var(--gradient-opacity));
-  --secondary-color: rgba(138, 43, 226, var(--gradient-opacity));
-  --accent-color: rgba(128, 59, 239, var(--gradient-opacity));
-  // --primary-color: rgba(147, 112, 219, var(--gradient-opacity));
-  // --secondary-color: rgba(138, 43, 226, var(--gradient-opacity));
-  // --accent-color: rgba(180, 170, 220, var(--gradient-opacity));
+  /*
+   * Landing-page aurora (BackgroundRays). These three only feed that component,
+   * and they are the page's most visible brand colour — so they carry the brand
+   * ramp (accent-300 / 400 / 500) rather than the old violet trio.
+   */
+  --primary-color: rgba(0, 255, 136, var(--gradient-opacity));
+  --secondary-color: rgba(0, 204, 110, var(--gradient-opacity));
+  --accent-color: rgba(0, 143, 74, var(--gradient-opacity));
 }
 
 .modern-scrollbar {

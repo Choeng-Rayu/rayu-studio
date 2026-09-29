@@ -20,6 +20,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
+import type { RayuProviderStatus } from '~/lib/rayu/provider-status';
 
 interface ChatBoxProps {
   isModelSettingsCollapsed: boolean;
@@ -29,6 +30,9 @@ interface ChatBoxProps {
   modelList: any[];
   apiKeys: Record<string, string>;
   isModelLoading: string | undefined;
+  rayuStatus: RayuProviderStatus;
+  modelError: string;
+  onRetryModels: () => void;
   onApiKeysChange: (providerName: string, apiKey: string) => void;
   uploadedFiles: File[];
   imageDataList: string[];
@@ -89,10 +93,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             gradientUnits="userSpaceOnUse"
             gradientTransform="rotate(-45)"
           >
-            <stop offset="0%" stopColor="#b44aff" stopOpacity="0%"></stop>
-            <stop offset="40%" stopColor="#b44aff" stopOpacity="80%"></stop>
-            <stop offset="50%" stopColor="#b44aff" stopOpacity="80%"></stop>
-            <stop offset="100%" stopColor="#b44aff" stopOpacity="0%"></stop>
+            <stop offset="0%" stopColor="#00FF88" stopOpacity="0%"></stop>
+            <stop offset="40%" stopColor="#00FF88" stopOpacity="80%"></stop>
+            <stop offset="50%" stopColor="#00FF88" stopOpacity="80%"></stop>
+            <stop offset="100%" stopColor="#00FF88" stopOpacity="0%"></stop>
           </linearGradient>
           <linearGradient id="shine-gradient">
             <stop offset="0%" stopColor="white" stopOpacity="0%"></stop>
@@ -121,15 +125,57 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               />
               {(props.providerList || []).length > 0 &&
                 props.provider &&
-                !LOCAL_PROVIDERS.includes(props.provider.name) && (
-                  <APIKeyManager
-                    provider={props.provider}
-                    apiKey={props.apiKeys[props.provider.name] || ''}
-                    setApiKey={(key) => {
-                      props.onApiKeysChange(props.provider.name, key);
-                    }}
-                  />
-                )}
+                !LOCAL_PROVIDERS.includes(props.provider.name) &&
+                (props.provider.name === 'Rayu' ? (
+                  <div className="py-3 px-1 text-xs text-rayu-elements-textSecondary" role="status">
+                    {props.isModelLoading
+                      ? 'Checking your Rayu models…'
+                      : props.modelError
+                        ? props.modelError
+                        : props.rayuStatus === 'ready'
+                          ? 'Using your signed-in Rayu account.'
+                          : props.rayuStatus === 'sign-in-required'
+                            ? 'Sign in to use Rayu hosted models.'
+                            : props.rayuStatus === 'upgrade-required'
+                              ? 'Your Free plan has no hosted model access. Upgrade your plan or add credits to use Rayu.'
+                              : props.rayuStatus === 'no-models-configured'
+                                ? 'No Rayu hosted models are configured yet. Contact support.'
+                                : 'Rayu models could not be loaded. Check the backend and gateway connection.'}
+                    {!props.isModelLoading && props.rayuStatus === 'upgrade-required' && (
+                      <a
+                        className="ml-2 text-accent-500 underline"
+                        href="https://rayucode.com/pricing"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View plans
+                      </a>
+                    )}
+                    {!props.isModelLoading && (props.modelError || props.rayuStatus === 'unavailable') && (
+                      <button className="ml-2 text-accent-500 underline" type="button" onClick={props.onRetryModels}>
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <APIKeyManager
+                      provider={props.provider}
+                      apiKey={props.apiKeys[props.provider.name] || ''}
+                      setApiKey={(key) => {
+                        props.onApiKeysChange(props.provider.name, key);
+                      }}
+                    />
+                    {props.modelError && !props.isModelLoading && (
+                      <div className="pb-2 text-xs text-red-400" role="alert">
+                        {props.modelError}
+                        <button className="ml-2 text-accent-500 underline" type="button" onClick={props.onRetryModels}>
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
             </div>
           )}
         </ClientOnly>

@@ -87,7 +87,7 @@ Let's get you up and running with the stable version of RayuCode!
 
 ## Quick Installation
 
-[![Download Latest Release](https://img.shields.io/github/v/release/rayucode/rayu-studio?label=Download%20Rayu&sort=semver)](https://github.com/rayucode/rayu-studio/releases/latest) ← Click here to go to the latest release version!
+[![Download Latest Release](https://img.shields.io/github/v/release/rayucode/rayu-studio?label=Download%20RayuCode&sort=semver)](https://github.com/rayucode/rayu-studio/releases/latest) ← Click here to go to the latest release version!
 
 - Download the binary for your platform (available for Windows, macOS, and Linux)
 - **Note**: For macOS, if you get the error "This app is damaged", run:

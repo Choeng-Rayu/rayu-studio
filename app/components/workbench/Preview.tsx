@@ -813,7 +813,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
                         <span className="text-xs text-rayu-elements-textTertiary">Show Device Frame</span>
                         <button
                           className={`w-10 h-5 rounded-full transition-colors duration-200 ${
-                            showDeviceFrame ? 'bg-[#6D28D9]' : 'bg-gray-300 dark:bg-gray-700'
+                            showDeviceFrame ? 'bg-accent-500' : 'bg-gray-300 dark:bg-gray-700'
                           } relative`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -831,7 +831,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
                         <span className="text-xs text-rayu-elements-textTertiary">Landscape Mode</span>
                         <button
                           className={`w-10 h-5 rounded-full transition-colors duration-200 ${
-                            isLandscape ? 'bg-[#6D28D9]' : 'bg-gray-300 dark:bg-gray-700'
+                            isLandscape ? 'bg-accent-500' : 'bg-gray-300 dark:bg-gray-700'
                           } relative`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -850,7 +850,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
                   {WINDOW_SIZES.map((size) => (
                     <button
                       key={size.name}
-                      className="w-full px-4 py-3.5 text-left text-[#111827] dark:text-gray-300 text-sm whitespace-nowrap flex items-center gap-3 group hover:bg-[#F5EEFF] dark:hover:bg-gray-900 bg-white dark:bg-black"
+                      className="w-full px-4 py-3.5 text-left text-[#111827] dark:text-gray-300 text-sm whitespace-nowrap flex items-center gap-3 group hover:bg-accent-50 dark:hover:bg-gray-900 bg-white dark:bg-black"
                       onClick={() => {
                         setSelectedWindowSize(size);
                         setIsWindowSizeDropdownOpen(false);
@@ -858,13 +858,13 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
                       }}
                     >
                       <div
-                        className={`${size.icon} w-5 h-5 text-[#6B7280] dark:text-gray-400 group-hover:text-[#6D28D9] dark:group-hover:text-[#6D28D9] transition-colors duration-200`}
+                        className={`${size.icon} w-5 h-5 text-[#6B7280] dark:text-gray-400 group-hover:text-accent-600 dark:group-hover:text-accent-400 transition-colors duration-200`}
                       />
                       <div className="flex-grow flex flex-col">
-                        <span className="font-medium group-hover:text-[#6D28D9] dark:group-hover:text-[#6D28D9] transition-colors duration-200">
+                        <span className="font-medium group-hover:text-accent-600 dark:group-hover:text-accent-400 transition-colors duration-200">
                           {size.name}
                         </span>
-                        <span className="text-xs text-[#6B7280] dark:text-gray-400 group-hover:text-[#6D28D9] dark:group-hover:text-[#6D28D9] transition-colors duration-200">
+                        <span className="text-xs text-[#6B7280] dark:text-gray-400 group-hover:text-accent-600 dark:group-hover:text-accent-400 transition-colors duration-200">
                           {isLandscape && (size.frameType === 'mobile' || size.frameType === 'tablet')
                             ? `${size.height} × ${size.width}`
                             : `${size.width} × ${size.height}`}
@@ -872,7 +872,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
                         </span>
                       </div>
                       {selectedWindowSize.name === size.name && (
-                        <div className="text-[#6D28D9] dark:text-[#6D28D9]">
+                        <div className="text-accent-600 dark:text-accent-400">
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             width="16"

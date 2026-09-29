@@ -4,6 +4,7 @@ import { stripIndents } from '~/utils/stripIndent';
 import type { ProviderInfo } from '~/types/model';
 import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
 import { createScopedLogger } from '~/utils/logger';
+import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 
 export async function action(args: ActionFunctionArgs) {
   return enhancerAction(args);
@@ -12,6 +13,29 @@ export async function action(args: ActionFunctionArgs) {
 const logger = createScopedLogger('api.enhancher');
 
 async function enhancerAction({ context, request }: ActionFunctionArgs) {
+  let rayuAuth;
+
+  try {
+    rayuAuth = await getRayuAuth(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+  } catch {
+    return Response.json(
+      { error: true, message: 'Rayu authentication is temporarily unavailable.', statusCode: 503 },
+      { status: 503 },
+    );
+  }
+
+  if (!rayuAuth) {
+    return Response.json(
+      { error: true, message: 'Sign in to your Rayu account before enhancing a prompt.', statusCode: 401 },
+      { status: 401 },
+    );
+  }
+
+  const sessionResponse = (body: BodyInit, init: ResponseInit = {}) => {
+    const headers = appendAuthCookies(new Headers(init.headers), rayuAuth.setCookies);
+    return new Response(body, { ...init, headers });
+  };
+
   const { message, model, provider } = await request.json<{
     message: string;
     model: string;
@@ -38,6 +62,8 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = getApiKeysFromCookie(cookieHeader);
+  apiKeys.Rayu = rayuAuth.accessToken;
+
   const providerSettings = getProviderSettingsFromCookie(cookieHeader);
 
   try {
@@ -111,7 +137,7 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
     })();
 
     // Return the text stream directly since it's already text data
-    return new Response(result.textStream, {
+    return sessionResponse(result.textStream, {
       status: 200,
       headers: {
         'Content-Type': 'text/event-stream',
@@ -123,7 +149,7 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
     console.log(error);
 
     if (error instanceof Error && error.message?.includes('API key')) {
-      throw new Response('Invalid or missing API key', {
+      throw sessionResponse('Invalid or missing API key', {
         status: 401,
         statusText: 'Unauthorized',
       });

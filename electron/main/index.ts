@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { createRequestHandler } from '@remix-run/node';
-import electron, { app, BrowserWindow, ipcMain, protocol, session } from 'electron';
+import electron, { app, BrowserWindow, ipcMain, protocol, session, shell } from 'electron';
 import log from 'electron-log';
 import path from 'node:path';
 import * as pkg from '../../package.json';
@@ -14,6 +14,43 @@ import { loadServerBuild, serveAsset } from './utils/serve';
 import { reloadOnChange } from './utils/reload';
 
 Object.assign(console, log.functions);
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+let mainWindow: BrowserWindow | null = null;
+let rendererURLForAuth: string | null = null;
+let pendingAuthLink = process.argv.find((argument) => argument.startsWith('rayustudio://')) ?? null;
+
+function deliverAuthLink(rawUrl: string): void {
+  try {
+    const link = new URL(rawUrl);
+    const code = link.searchParams.get('code') || '';
+    const state = link.searchParams.get('state') || '';
+    if (link.protocol !== 'rayustudio:' || link.hostname !== 'auth' || !/^[a-fA-F0-9]{64}$/.test(code) || !/^[a-fA-F0-9]{64}$/.test(state)) return;
+    if (!mainWindow || !rendererURLForAuth) {
+      pendingAuthLink = rawUrl;
+      return;
+    }
+    const callback = new URL('/auth/callback', rendererURLForAuth);
+    callback.searchParams.set('code', code);
+    callback.searchParams.set('state', state);
+    void mainWindow.loadURL(callback.toString());
+    mainWindow.show();
+    mainWindow.focus();
+  } catch (error) {
+    console.warn('Ignoring invalid Rayu Studio sign-in link', error);
+  }
+}
+
+if (process.platform !== 'darwin') app.setAsDefaultProtocolClient('rayustudio');
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  deliverAuthLink(url);
+});
+app.on('second-instance', (_event, argv) => {
+  const authLink = argv.find((argument) => argument.startsWith('rayustudio://'));
+  if (authLink) deliverAuthLink(authLink);
+  else mainWindow?.focus();
+});
 
 console.debug('main: import.meta.env:', import.meta.env);
 console.log('main: isDev:', isDev);
@@ -69,6 +106,10 @@ declare global {
 }
 
 (async () => {
+  if (!hasSingleInstanceLock) {
+    app.quit();
+    return;
+  }
   await app.whenReady();
   console.log('App is ready');
 
@@ -168,12 +209,27 @@ declare global {
     : `http://localhost:${DEFAULT_PORT}`);
 
   console.log('Using renderer URL:', rendererURL);
+  rendererURLForAuth = rendererURL;
+
+  ipcMain.handle('open-external', async (_event, rawUrl: string) => {
+    const target = new URL(rawUrl);
+    const trustedProduction = target.protocol === 'https:' && target.hostname === 'rayucode.com';
+    const trustedDevelopment = isDev && target.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(target.hostname);
+    if (!trustedProduction && !trustedDevelopment) throw new Error('Refusing to open an untrusted sign-in URL.');
+    await shell.openExternal(target.toString());
+  });
 
   const win = await createWindow(rendererURL);
+  mainWindow = win;
+  if (pendingAuthLink) {
+    const pending = pendingAuthLink;
+    pendingAuthLink = null;
+    deliverAuthLink(pending);
+  }
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      await createWindow(rendererURL);
+      mainWindow = await createWindow(rendererURL);
     }
   });
 
@@ -182,6 +238,7 @@ declare global {
   return win;
 })()
   .then((win) => {
+    if (!win) return undefined;
     // IPC samples : send and recieve.
     let count = 0;
     setInterval(() => win.webContents.send('ping', `hello from main! ${count++}`), 60 * 1000);
@@ -189,7 +246,9 @@ declare global {
 
     return win;
   })
-  .then((win) => setupMenu(win));
+  .then((win) => {
+    if (win) setupMenu(win);
+  });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -197,5 +256,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-reloadOnChange();
-setupAutoUpdater();
+if (hasSingleInstanceLock) {
+  reloadOnChange();
+  setupAutoUpdater();
+}

@@ -34,7 +34,11 @@ export interface ChatHistoryItem {
 
 const persistenceEnabled = !import.meta.env.VITE_DISABLE_PERSISTENCE;
 
-export const db = persistenceEnabled ? await openDatabase() : undefined;
+/*
+ * Avoid opening IndexedDB while this module is evaluated by the server bundle.
+ * The browser bundle initializes its own database instance during hydration.
+ */
+export const db = persistenceEnabled && typeof window !== 'undefined' ? await openDatabase() : undefined;
 
 export const chatId = atom<string | undefined>(undefined);
 export const description = atom<string | undefined>(undefined);

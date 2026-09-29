@@ -34,18 +34,28 @@ const BASE_COLORS = {
     900: '#171717',
     950: '#0A0A0A',
   },
+  /*
+   * RayuCode green. Steps 300 and 400 are the two official brand values
+   * (#00FF88 and #00CC6E); everything above 500 is derived.
+   *
+   * Note the deliberately large luminance drop between 400 and 500. The brand
+   * green is neon — #00FF88 on white is only 1.34:1, i.e. invisible — so any
+   * accent used as text on a light background has to come from 500 or below.
+   * 500 (#008F4A) is the highest step that still clears 4:1 on white, which is
+   * what makes `text-accent-500 dark:text-accent-400` legible in both themes.
+   */
   accent: {
-    50: '#F8F5FF',
-    100: '#F0EBFF',
-    200: '#E1D6FF',
-    300: '#CEBEFF',
-    400: '#B69EFF',
-    500: '#9C7DFF',
-    600: '#8A5FFF',
-    700: '#7645E8',
-    800: '#6234BB',
-    900: '#502D93',
-    950: '#2D1959',
+    50: '#E8FFF4',
+    100: '#C7FFE4',
+    200: '#8FFFC8',
+    300: '#00FF88',
+    400: '#00CC6E',
+    500: '#008F4A',
+    600: '#007A3F',
+    700: '#006533',
+    800: '#005229',
+    900: '#003D1F',
+    950: '#032616',
   },
   green: {
     50: '#F0FDF4',
@@ -93,7 +103,16 @@ const COLOR_PRIMITIVES = {
     white: generateAlphaPalette(BASE_COLORS.white),
     gray: generateAlphaPalette(BASE_COLORS.gray[900]),
     red: generateAlphaPalette(BASE_COLORS.red[500]),
-    accent: generateAlphaPalette(BASE_COLORS.accent[500]),
+    /*
+     * Derived from the bright brand green (accent.300), not accent.500.
+     * accent.500 is the *readable-on-white* step, so a 10% wash of it is a
+     * muddy near-black on the dark surfaces and barely tinted on white. The
+     * pale washes and hovers are meant to read as the brand green itself:
+     * alpha.accent.10 over white lands on accent.50 and alpha.accent.20 on
+     * accent.100, and over `#030507` they reproduce the site's
+     * `rgba(0,255,136,0.08)` chip / `rgba(0,255,136,0.18)` glow exactly.
+     */
+    accent: generateAlphaPalette(BASE_COLORS.accent[300]),
   },
 };
 
@@ -119,6 +138,14 @@ export default defineConfig({
         elements: {
           borderColor: 'var(--rayu-elements-borderColor)',
           borderColorActive: 'var(--rayu-elements-borderColorActive)',
+          /*
+           * Backs the 11 `ring-rayu-elements-focus` utilities. The token was
+           * referenced from the components but never declared here — and without
+           * a theme colour UnoCSS emits nothing for the utility at all, so every
+           * one of those rings silently rendered no ring. The variable itself
+           * lives in variables.scss (opaque green in light, glowing green in dark).
+           */
+          focus: 'var(--rayu-elements-focus)',
           background: {
             depth: {
               1: 'var(--rayu-elements-bg-depth-1)',

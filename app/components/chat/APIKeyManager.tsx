@@ -44,7 +44,6 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, 
     const savedKey = savedKeys[provider.name] || '';
 
     setTempKey(savedKey);
-    setApiKey(savedKey);
     setIsEditing(false);
   }, [provider.name]);
 
@@ -74,14 +73,8 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, 
   }, [checkEnvApiKey]);
 
   const handleSave = () => {
-    // Save to parent state
+    // The parent owns both model refresh and cookie persistence.
     setApiKey(tempKey);
-
-    // Save to cookies
-    const currentKeys = getApiKeysFromCookies();
-    const newKeys = { ...currentKeys, [provider.name]: tempKey };
-    Cookies.set('apiKeys', JSON.stringify(newKeys));
-
     setIsEditing(false);
   };
 
@@ -155,7 +148,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, 
               <IconButton
                 onClick={() => window.open(provider?.getApiKeyLink)}
                 title="Get API Key"
-                className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-500 flex items-center gap-2"
+                className="bg-accent-500/10 hover:bg-accent-500/20 text-accent-500 flex items-center gap-2"
               >
                 <span className="text-xs whitespace-nowrap">{provider?.labelForGetApiKey || 'Get API Key'}</span>
                 <div className={`${provider?.icon || 'i-ph:key'} w-4 h-4`} />

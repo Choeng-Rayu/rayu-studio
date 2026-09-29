@@ -160,6 +160,43 @@ describe('StreamingMessageParser', () => {
 });
 
 describe('EnhancedStreamingMessageParser', () => {
+  it('does not replay earlier file actions when a later message contains a code block', () => {
+    const onActionClose = vi.fn();
+    const parser = new EnhancedStreamingMessageParser({ callbacks: { onActionClose } });
+    const first =
+      '<rayuArtifact title="Project" type="bundled"><rayuAction type="file" filePath="index.ts">export const a = 1;</rayuAction></rayuArtifact>';
+    const second = 'Create a new file called next.ts:\n\n```ts\nexport const b = 2;\n```';
+
+    parser.parse('first', first);
+    parser.parse('second', second);
+    parser.parse('first', first);
+
+    expect(onActionClose).toHaveBeenCalledTimes(2);
+    expect(onActionClose.mock.calls.map(([value]) => value.action.filePath)).toEqual(['index.ts', '/next.ts']);
+  });
+
+  it('waits for a code block to finish, then creates its file once', () => {
+    const onActionClose = vi.fn();
+    const parser = new EnhancedStreamingMessageParser({ callbacks: { onActionClose } });
+    const partial = 'Create a new file called app.ts:\n\n```ts\nexport const app =';
+    const complete = `${partial} true;\n\`\`\``;
+
+    parser.parse('streaming', partial, false);
+    expect(onActionClose).not.toHaveBeenCalled();
+    parser.parse('streaming', complete, false);
+    expect(onActionClose).not.toHaveBeenCalled();
+    parser.parse('streaming', complete, true);
+    expect(parser.consumeReplacement('streaming')).toBe(true);
+    parser.parse('streaming', complete, true);
+
+    expect(onActionClose).toHaveBeenCalledOnce();
+    expect(onActionClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: expect.objectContaining({ type: 'file', filePath: '/app.ts', content: 'export const app = true;\n' }),
+      }),
+    );
+  });
+
   it('should detect shell commands in code blocks', () => {
     const callbacks = {
       onArtifactOpen: vi.fn(),

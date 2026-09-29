@@ -782,9 +782,9 @@ export default function NetlifyTab() {
                         label: 'Custom Domain',
                         value: customDomain,
                         icon: 'i-ph:globe',
-                        color: 'text-purple-500',
-                        bgColor: 'bg-purple-100 dark:bg-purple-900/20',
-                        textColor: 'text-purple-800 dark:text-purple-400',
+                        color: 'text-accent-500',
+                        bgColor: 'bg-accent-100 dark:bg-accent-900/20',
+                        textColor: 'text-accent-800 dark:text-accent-400',
                       },
                       {
                         label: 'Building',
@@ -1345,7 +1345,7 @@ export default function NetlifyTab() {
                   className={classNames(
                     'px-4 py-2 rounded-lg text-sm flex items-center gap-2',
                     'bg-[#303030] text-white',
-                    'hover:bg-[#5E41D0] hover:text-white',
+                    'hover:bg-accent-500 hover:text-white',
                     'disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200',
                     'transform active:scale-95',
                   )}

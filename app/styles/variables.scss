@@ -4,6 +4,13 @@
   --rayu-elements-borderColor: theme('colors.alpha.gray.10');
   --rayu-elements-borderColorActive: theme('colors.accent.600');
 
+  /*
+   * Focus ring colour. This token was referenced by 11 `ring-rayu-elements-focus`
+   * utilities but never defined, so every one of those rings silently rendered
+   * nothing. Opaque green here — a neon ring is invisible on white.
+   */
+  --rayu-elements-focus: theme('colors.accent.600');
+
   --rayu-elements-bg-depth-1: theme('colors.white');
   --rayu-elements-bg-depth-2: theme('colors.gray.50');
   --rayu-elements-bg-depth-3: theme('colors.gray.200');
@@ -109,24 +116,29 @@
 /* Color Tokens Dark Theme */
 :root,
 :root[data-theme='dark'] {
-  --rayu-elements-borderColor: theme('colors.alpha.white.10');
-  --rayu-elements-borderColorActive: theme('colors.accent.500');
+  /* RayuCode site border is rgba(255,255,255,0.12); active/bright is the brand green. */
+  --rayu-elements-borderColor: rgba(255, 255, 255, 0.12);
+  --rayu-elements-borderColorActive: rgba(0, 255, 136, 0.35);
 
-  --rayu-elements-bg-depth-1: theme('colors.gray.950');
-  --rayu-elements-bg-depth-2: theme('colors.gray.900');
-  --rayu-elements-bg-depth-3: theme('colors.gray.800');
+  /* Semi-transparent brand green so the ring reads as a glow on a dark surface. */
+  --rayu-elements-focus: rgba(0, 255, 136, 0.45);
+
+  /* RayuCode site surfaces: #030507 / #080d14 / #0e1520 (a cool blue-black). */
+  --rayu-elements-bg-depth-1: #030507;
+  --rayu-elements-bg-depth-2: #080d14;
+  --rayu-elements-bg-depth-3: #0e1520;
   --rayu-elements-bg-depth-4: theme('colors.alpha.white.5');
 
   --rayu-elements-textPrimary: theme('colors.white');
   --rayu-elements-textSecondary: theme('colors.gray.400');
   --rayu-elements-textTertiary: theme('colors.gray.500');
 
-  --rayu-elements-code-background: theme('colors.gray.800');
+  --rayu-elements-code-background: #0e1520;
   --rayu-elements-code-text: theme('colors.white');
 
   --rayu-elements-button-primary-background: theme('colors.alpha.accent.10');
   --rayu-elements-button-primary-backgroundHover: theme('colors.alpha.accent.20');
-  --rayu-elements-button-primary-text: theme('colors.accent.500');
+  --rayu-elements-button-primary-text: theme('colors.accent.300');
 
   --rayu-elements-button-secondary-background: theme('colors.alpha.white.5');
   --rayu-elements-button-secondary-backgroundHover: theme('colors.alpha.white.10');
@@ -138,7 +150,7 @@
 
   --rayu-elements-item-contentDefault: theme('colors.alpha.white.50');
   --rayu-elements-item-contentActive: theme('colors.white');
-  --rayu-elements-item-contentAccent: theme('colors.accent.500');
+  --rayu-elements-item-contentAccent: theme('colors.accent.300');
   --rayu-elements-item-contentDanger: theme('colors.red.500');
   --rayu-elements-item-backgroundDefault: rgba(255, 255, 255, 0);
   --rayu-elements-item-backgroundActive: theme('colors.alpha.white.10');
@@ -146,21 +158,21 @@
   --rayu-elements-item-backgroundDanger: theme('colors.alpha.red.10');
 
   --rayu-elements-loader-background: theme('colors.alpha.gray.10');
-  --rayu-elements-loader-progress: theme('colors.accent.500');
+  --rayu-elements-loader-progress: theme('colors.accent.300');
 
-  --rayu-elements-artifacts-background: theme('colors.gray.900');
+  --rayu-elements-artifacts-background: #080d14;
   --rayu-elements-artifacts-backgroundHover: theme('colors.alpha.white.5');
   --rayu-elements-artifacts-borderColor: var(--rayu-elements-borderColor);
-  --rayu-elements-artifacts-inlineCode-background: theme('colors.gray.800');
+  --rayu-elements-artifacts-inlineCode-background: #0e1520;
   --rayu-elements-artifacts-inlineCode-text: theme('colors.white');
 
-  --rayu-elements-actions-background: theme('colors.gray.900');
-  --rayu-elements-actions-code-background: theme('colors.gray.800');
+  --rayu-elements-actions-background: #080d14;
+  --rayu-elements-actions-code-background: #0e1520;
 
-  --rayu-elements-messages-background: theme('colors.gray.800');
-  --rayu-elements-messages-linkColor: theme('colors.accent.500');
-  --rayu-elements-messages-code-background: theme('colors.gray.900');
-  --rayu-elements-messages-inlineCode-background: theme('colors.gray.700');
+  --rayu-elements-messages-background: #0e1520;
+  --rayu-elements-messages-linkColor: theme('colors.accent.300');
+  --rayu-elements-messages-code-background: #030507;
+  --rayu-elements-messages-inlineCode-background: #16202d;
   --rayu-elements-messages-inlineCode-text: var(--rayu-elements-textPrimary);
 
   --rayu-elements-icon-success: theme('colors.green.400');
@@ -171,12 +183,12 @@
 
   --rayu-elements-dividerColor: theme('colors.gray.100');
 
-  --rayu-elements-prompt-background: theme('colors.alpha.gray.80');
+  --rayu-elements-prompt-background: rgba(8, 13, 20, 0.8);
 
-  --rayu-elements-sidebar-dropdownShadow: theme('colors.alpha.gray.30');
+  --rayu-elements-sidebar-dropdownShadow: rgba(0, 255, 136, 0.18);
   --rayu-elements-sidebar-buttonBackgroundDefault: theme('colors.alpha.accent.10');
   --rayu-elements-sidebar-buttonBackgroundHover: theme('colors.alpha.accent.20');
-  --rayu-elements-sidebar-buttonText: theme('colors.accent.500');
+  --rayu-elements-sidebar-buttonText: theme('colors.accent.300');
 
   --rayu-elements-preview-addressBar-background: var(--rayu-elements-bg-depth-1);
   --rayu-elements-preview-addressBar-backgroundHover: theme('colors.alpha.white.5');

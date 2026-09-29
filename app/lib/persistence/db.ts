@@ -13,13 +13,21 @@ const logger = createScopedLogger('ChatHistory');
 
 // this is used at the top level and never rejects
 export async function openDatabase(): Promise<IDBDatabase | undefined> {
-  if (typeof indexedDB === 'undefined') {
-    console.error('indexedDB is not available in this environment.');
+  /*
+   * This module is imported during SSR too. IndexedDB is only expected in a
+   * browser, so skip server initialization without reporting an error.
+   */
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  if (typeof window.indexedDB === 'undefined') {
+    console.error('IndexedDB is not available in this browser.');
     return undefined;
   }
 
   return new Promise((resolve) => {
-    const request = indexedDB.open('rayuHistory', 2);
+    const request = window.indexedDB.open('rayuHistory', 2);
 
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;

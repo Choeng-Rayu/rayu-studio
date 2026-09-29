@@ -45,6 +45,9 @@ export default defineConfig((config) => {
       },
       config.mode !== 'test' && remixCloudflareDevProxy(),
       remixVitePlugin({
+        // Keep colocated Vitest files out of Remix's route manifest. Importing a
+        // spec as a route makes every page fail when Vitest is not running.
+        ignoredRouteFiles: ['**/*.spec.*', '**/*.test.*'],
         future: {
           v3_fetcherPersist: true,
           v3_relativeSplatPath: true,

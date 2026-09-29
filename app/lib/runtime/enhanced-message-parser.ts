@@ -10,6 +10,8 @@ const logger = createScopedLogger('EnhancedMessageParser');
  */
 export class EnhancedStreamingMessageParser extends StreamingMessageParser {
   private _processedCodeBlocks = new Map<string, Set<string>>();
+  private _enhancedInputs = new Map<string, { source: string; content: string }>();
+  private _replacedMessages = new Set<string>();
   private _artifactCounter = 0;
 
   // Optimized command pattern lookup
@@ -32,22 +34,47 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
     super(options);
   }
 
-  parse(messageId: string, input: string): string {
-    // First try the normal parsing
-    let output = super.parse(messageId, input);
-
-    // If no artifacts were detected, check for code blocks that should be files
-    if (!this._hasDetectedArtifacts(input)) {
-      const enhancedInput = this._detectAndWrapCodeBlocks(messageId, input);
-
-      if (enhancedInput !== input) {
-        // Reset and reparse with enhanced input
-        this.reset();
-        output = super.parse(messageId, enhancedInput);
-      }
+  parse(messageId: string, input: string, allowEnhancement = true): string {
+    /*
+     * Do not execute inferred actions from an unfinished code fence. Native
+     * artifact actions can still stream through the base parser immediately.
+     */
+    if (!allowEnhancement || this._hasDetectedArtifacts(input)) {
+      return super.parse(messageId, input);
     }
 
-    return output;
+    const cached = this._enhancedInputs.get(messageId);
+
+    if (cached?.source === input) {
+      return super.parse(messageId, cached.content);
+    }
+
+    if (cached) {
+      this._processedCodeBlocks.delete(messageId);
+    }
+
+    const enhancedInput = this._detectAndWrapCodeBlocks(messageId, input);
+
+    if (enhancedInput === input) {
+      return super.parse(messageId, input);
+    }
+
+    /*
+     * Only this message needs reparsing. A global reset replayed every older
+     * artifact and could execute its file/shell actions a second time.
+     */
+    super.resetMessage(messageId);
+    this._enhancedInputs.set(messageId, { source: input, content: enhancedInput });
+    this._replacedMessages.add(messageId);
+
+    return super.parse(messageId, enhancedInput);
+  }
+
+  consumeReplacement(messageId: string): boolean {
+    const replaced = this._replacedMessages.has(messageId);
+    this._replacedMessages.delete(messageId);
+
+    return replaced;
   }
 
   private _hasDetectedArtifacts(input: string): boolean {
@@ -522,6 +549,15 @@ ${content.trim()}
   reset() {
     super.reset();
     this._processedCodeBlocks.clear();
+    this._enhancedInputs.clear();
+    this._replacedMessages.clear();
     this._artifactCounter = 0;
+  }
+
+  resetMessage(messageId: string) {
+    super.resetMessage(messageId);
+    this._processedCodeBlocks.delete(messageId);
+    this._enhancedInputs.delete(messageId);
+    this._replacedMessages.delete(messageId);
   }
 }

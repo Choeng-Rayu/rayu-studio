@@ -81,13 +81,15 @@ export class LLMManager {
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
     serverEnv?: Record<string, string>;
+    onProviderError?: (provider: string, error: unknown) => void;
   }): Promise<ModelInfo[]> {
-    const { apiKeys, providerSettings, serverEnv } = options;
+    const { apiKeys, providerSettings, serverEnv, onProviderError } = options;
 
     let enabledProviders = Array.from(this._providers.values()).map((p) => p.name);
 
     if (providerSettings && Object.keys(providerSettings).length > 0) {
-      enabledProviders = enabledProviders.filter((p) => providerSettings[p].enabled);
+      // Older settings cookies do not contain providers added in later releases.
+      enabledProviders = enabledProviders.filter((p) => providerSettings[p]?.enabled !== false);
     }
 
     // Get dynamic models from all providers that support them
@@ -115,6 +117,8 @@ export class LLMManager {
             })
             .catch((err) => {
               logger.error(`Error getting dynamic models ${provider.name} :`, err);
+              onProviderError?.(provider.name, err);
+
               return [];
             });
 
@@ -142,6 +146,7 @@ export class LLMManager {
       apiKeys?: Record<string, string>;
       providerSettings?: Record<string, IProviderSetting>;
       serverEnv?: Record<string, string>;
+      onProviderError?: (provider: string, error: unknown) => void;
     },
   ): Promise<ModelInfo[]> {
     const provider = this._providers.get(providerArg.name);
@@ -156,7 +161,7 @@ export class LLMManager {
       return staticModels;
     }
 
-    const { apiKeys, providerSettings, serverEnv } = options;
+    const { apiKeys, providerSettings, serverEnv, onProviderError } = options;
 
     const cachedModels = provider.getModelsFromCache({
       apiKeys,
@@ -181,6 +186,8 @@ export class LLMManager {
       })
       .catch((err) => {
         logger.error(`Error getting dynamic models ${provider.name} :`, err);
+        onProviderError?.(provider.name, err);
+
         return [];
       });
     const dynamicModelsName = dynamicModels.map((d) => d.name);

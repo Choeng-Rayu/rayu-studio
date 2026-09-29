@@ -20,6 +20,8 @@ import AmazonBedrockProvider from './providers/amazon-bedrock';
 import GithubProvider from './providers/github';
 import MoonshotProvider from './providers/moonshot';
 import ZaiProvider from './providers/z-ai';
+import RayuHostedProvider from './providers/rayu-hosted';
+import RayuApiKeyProvider from './providers/rayu-apikey';
 
 export {
   AnthropicProvider,
@@ -44,4 +46,6 @@ export {
   AmazonBedrockProvider,
   GithubProvider,
   ZaiProvider,
+  RayuHostedProvider,
+  RayuApiKeyProvider,
 };

@@ -1,4 +1,5 @@
 import { createScopedLogger } from '~/utils/logger';
+import { getBrowserLocalStorage } from './localStorage';
 
 const logger = createScopedLogger('LockedFiles');
 
@@ -41,8 +42,10 @@ function initializeCache(): LockedItem[] {
   }
 
   try {
-    if (typeof localStorage !== 'undefined') {
-      const lockedItemsJson = localStorage.getItem(LOCKED_FILES_KEY);
+    const storage = getBrowserLocalStorage();
+
+    if (storage) {
+      const lockedItemsJson = storage.getItem(LOCKED_FILES_KEY);
 
       if (lockedItemsJson) {
         const items = JSON.parse(lockedItemsJson);
@@ -110,8 +113,10 @@ export function saveLockedItems(items: LockedItem[]): void {
 
   saveDebounceTimer = setTimeout(() => {
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(LOCKED_FILES_KEY, JSON.stringify(items));
+      const storage = getBrowserLocalStorage();
+
+      if (storage) {
+        storage.setItem(LOCKED_FILES_KEY, JSON.stringify(items));
         logger.info(`Saved ${items.length} locked items to localStorage`);
       }
     } catch (error) {
@@ -383,8 +388,10 @@ export function migrateLegacyLocks(currentChatId: string): void {
     clearCache();
 
     // Get the items directly from localStorage
-    if (typeof localStorage !== 'undefined') {
-      const lockedItemsJson = localStorage.getItem(LOCKED_FILES_KEY);
+    const storage = getBrowserLocalStorage();
+
+    if (storage) {
+      const lockedItemsJson = storage.getItem(LOCKED_FILES_KEY);
 
       if (lockedItemsJson) {
         const lockedItems = JSON.parse(lockedItemsJson);

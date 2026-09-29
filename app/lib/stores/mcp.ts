@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { MCPConfig, MCPServerTools } from '~/lib/services/mcpService';
+import type { MCPConfig, MCPServerConfig, MCPServerTools } from '~/lib/services/mcpService';
 
 const MCP_SETTINGS_KEY = 'mcp_settings';
 const isBrowser = typeof window !== 'undefined';
@@ -15,6 +15,26 @@ const defaultSettings = {
     mcpServers: {},
   },
 } satisfies MCPSettings;
+
+let initializePromise: Promise<void> | null = null;
+
+function sameServerConfig(left: MCPServerConfig, right?: MCPServerConfig): boolean {
+  if (!right) {
+    return false;
+  }
+
+  const comparable = (config: MCPServerConfig) => ({
+    type: config.type || ('command' in config ? 'stdio' : undefined),
+    command: 'command' in config ? config.command : undefined,
+    args: 'args' in config ? config.args : undefined,
+    cwd: 'cwd' in config ? config.cwd : undefined,
+    env: 'env' in config ? config.env : undefined,
+    url: 'url' in config ? config.url : undefined,
+    headers: 'headers' in config ? config.headers : undefined,
+  });
+
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+}
 
 type Store = {
   isInitialized: boolean;
@@ -36,33 +56,61 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
   serverTools: {},
   error: null,
   isUpdatingConfig: false,
-  initialize: async () => {
+  initialize: () => {
     if (get().isInitialized) {
-      return;
+      return Promise.resolve();
     }
 
-    if (isBrowser) {
-      const savedConfig = localStorage.getItem(MCP_SETTINGS_KEY);
+    if (initializePromise) {
+      return initializePromise;
+    }
 
-      if (savedConfig) {
-        try {
-          const settings = JSON.parse(savedConfig) as MCPSettings;
-          const serverTools = await updateServerConfig(settings.mcpConfig);
-          set(() => ({ settings, serverTools }));
-        } catch (error) {
-          console.error('Error parsing saved mcp config:', error);
-          set(() => ({
-            error: `Error parsing saved mcp config: ${error instanceof Error ? error.message : String(error)}`,
-          }));
+    /*
+     * The chat dialog and Settings tab may mount together. Share one request
+     * so concurrent initialization cannot close each other's MCP clients.
+     */
+    initializePromise = (async () => {
+      if (isBrowser) {
+        const savedConfig = localStorage.getItem(MCP_SETTINGS_KEY);
+
+        if (savedConfig) {
+          try {
+            const settings = JSON.parse(savedConfig) as MCPSettings;
+            set(() => ({ settings }));
+
+            if (Object.keys(settings.mcpConfig?.mcpServers || {}).length > 0) {
+              const serverTools = await updateServerConfig(settings.mcpConfig);
+              set(() => ({ serverTools, error: null }));
+            } else {
+              /*
+               * An empty config in a different tab must not close connections
+               * held by the server-wide MCP service.
+               */
+              set(() => ({ serverTools: {}, error: null }));
+            }
+          } catch (error) {
+            console.error('Error loading saved MCP config:', error);
+            set(() => ({
+              error: `Could not load MCP connections: ${error instanceof Error ? error.message : String(error)}`,
+            }));
+          }
+        } else {
+          localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(defaultSettings));
         }
-      } else {
-        localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(defaultSettings));
       }
-    }
 
-    set(() => ({ isInitialized: true }));
+      set(() => ({ isInitialized: true }));
+    })().finally(() => {
+      initializePromise = null;
+    });
+
+    return initializePromise;
   },
   updateSettings: async (newSettings: MCPSettings) => {
+    if (initializePromise) {
+      await initializePromise;
+    }
+
     if (get().isUpdatingConfig) {
       return;
     }
@@ -76,7 +124,7 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
         localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(newSettings));
       }
 
-      set(() => ({ settings: newSettings, serverTools }));
+      set(() => ({ settings: newSettings, serverTools, error: null }));
     } catch (error) {
       throw error;
     } finally {
@@ -84,17 +132,41 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
     }
   },
   checkServersAvailabilities: async () => {
-    const response = await fetch('/api/mcp-check', {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+    if (initializePromise) {
+      await initializePromise;
     }
 
-    const serverTools = (await response.json()) as MCPServerTools;
+    const config = get().settings.mcpConfig;
+    const configuredNames = Object.keys(config?.mcpServers || {});
 
-    set(() => ({ serverTools }));
+    if (configuredNames.length === 0) {
+      set(() => ({ serverTools: {}, error: null }));
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/mcp-check', { method: 'GET' });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+      }
+
+      let serverTools = (await response.json()) as MCPServerTools;
+
+      if (configuredNames.some((name) => !sameServerConfig(config.mcpServers[name], serverTools[name]?.config))) {
+        /*
+         * Remix/Workers can restart and lose the process-local MCP service.
+         * Restore it from the browser's saved configuration before reporting
+         * that the user's servers disappeared.
+         */
+        serverTools = await updateServerConfig(config);
+      }
+
+      set(() => ({ serverTools, error: null }));
+    } catch (error) {
+      set(() => ({ serverTools: {}, error: error instanceof Error ? error.message : String(error) }));
+      throw error;
+    }
   },
 }));
 

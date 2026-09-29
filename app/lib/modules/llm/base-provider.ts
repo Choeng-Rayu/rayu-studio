@@ -14,6 +14,7 @@ export abstract class BaseProvider implements ProviderInfo {
   cachedDynamicModels?: {
     cacheId: string;
     models: ModelInfo[];
+    cachedAt: number;
   };
 
   getApiKeyLink?: string;
@@ -107,6 +108,15 @@ export abstract class BaseProvider implements ProviderInfo {
       return null;
     }
 
+    /*
+     * Rayu entitlements can change while the access token stays the same.
+     * A cached empty result must never survive an upgrade or wallet top-up.
+     */
+    if (this.name.startsWith('Rayu') && Date.now() - this.cachedDynamicModels.cachedAt > 60_000) {
+      this.cachedDynamicModels = undefined;
+      return null;
+    }
+
     const cacheKey = this.cachedDynamicModels.cacheId;
     const generatedCacheKey = this.getDynamicModelsCacheKey(options);
 
@@ -147,11 +157,17 @@ export abstract class BaseProvider implements ProviderInfo {
     },
     models: ModelInfo[],
   ) {
+    if (this.name.startsWith('Rayu') && models.length === 0) {
+      this.cachedDynamicModels = undefined;
+      return;
+    }
+
     const cacheId = this.getDynamicModelsCacheKey(options);
 
     this.cachedDynamicModels = {
       cacheId,
       models,
+      cachedAt: Date.now(),
     };
   }
 

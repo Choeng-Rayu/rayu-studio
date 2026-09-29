@@ -18,8 +18,15 @@ export const TOOL_EXECUTION_ERROR = 'Error: An error occured while calling tool'
 
 const llmManager = LLMManager.getInstance(import.meta.env);
 
-export const PROVIDER_LIST = llmManager.getAllProviders();
-export const DEFAULT_PROVIDER = llmManager.getDefaultProvider();
+const registeredProviders = llmManager.getAllProviders();
+const rayuApiKeyProvider = registeredProviders.find((provider) => provider.name === 'Rayu API Key');
+
+// Keep the optional API-key choice easy to find without making it the default.
+export const PROVIDER_LIST = rayuApiKeyProvider
+  ? [rayuApiKeyProvider, ...registeredProviders.filter((provider) => provider !== rayuApiKeyProvider)]
+  : registeredProviders;
+export const DEFAULT_PROVIDER =
+  registeredProviders.find((provider) => provider.name === 'Rayu') ?? llmManager.getDefaultProvider();
 
 export const providerBaseUrlEnvKeys: Record<string, { baseUrlKey?: string; apiTokenKey?: string }> = {};
 PROVIDER_LIST.forEach((provider) => {
