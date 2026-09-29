@@ -123,7 +123,7 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
               'group',
             )}
             onClick={() =>
-              window.open('https://github.com/rayucode/rayu-studio/issues/new?template=bug_report.yml', '_blank')
+              window.open('https://github.com/choeng-rayu/rayu-studio/issues/new?template=bug_report.yml', '_blank')
             }
           >
             <div className="i-ph:bug w-4 h-4 text-gray-400 group-hover:text-accent-500 dark:group-hover:text-accent-400 transition-colors" />
@@ -163,7 +163,7 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
               'outline-none',
               'group',
             )}
-            onClick={() => window.open('https://github.com/rayucode/rayu-studio', '_blank')}
+            onClick={() => window.open('https://github.com/choeng-rayu/rayu-studio', '_blank')}
           >
             <div className="i-ph:question w-4 h-4 text-gray-400 group-hover:text-accent-500 dark:group-hover:text-accent-400 transition-colors" />
             Help & Documentation
