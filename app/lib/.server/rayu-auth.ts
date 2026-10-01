@@ -75,8 +75,28 @@ function getEnv(env: RuntimeEnv | undefined, key: string): string | undefined {
 }
 
 function cookieAttributes(request: Request, maxAge: number): string {
-  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+  const secure = new URL(publicOrigin(request)).protocol === 'https:' ? '; Secure' : '';
   return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+/**
+ * The origin the browser actually used.
+ *
+ * Behind a TLS-terminating proxy (Coolify's Traefik in front of `wrangler pages dev`)
+ * the worker sees `http://host` for an `https://host` page, which produced an
+ * `http://` sign-in redirect_uri that rayu-web's allowlist rejects. Only the SCHEME is
+ * taken from `X-Forwarded-Proto`, and only to upgrade to https; the host always comes
+ * from the request itself, so a forged header cannot point the redirect elsewhere.
+ */
+export function publicOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get('X-Forwarded-Proto')?.split(',')[0]?.trim().toLowerCase();
+
+  if (url.protocol === 'http:' && forwardedProto === 'https') {
+    url.protocol = 'https:';
+  }
+
+  return url.origin;
 }
 
 function tokenMaxAge(token: string, fallbackSeconds: number): number {
