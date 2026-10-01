@@ -1,6 +1,8 @@
 import { json } from '@remix-run/cloudflare';
+import { gitlabApiBase } from '~/lib/api/gitlab';
 import { withSecurity } from '~/lib/security';
 import type { GitLabProjectInfo } from '~/types/GitLab';
+import { BlockedUrlError, fetchAllowedUrl } from '~/utils/url';
 
 interface GitLabProject {
   id: number;
@@ -19,16 +21,22 @@ interface GitLabProject {
 async function gitlabProjectsLoader({ request }: { request: Request }) {
   try {
     const body: any = await request.json();
-    const { token, gitlabUrl = 'https://gitlab.com' } = body;
+    const { token, gitlabUrl } = body;
 
     if (!token) {
       return json({ error: 'GitLab token is required' }, { status: 400 });
     }
 
-    // Fetch user's projects from GitLab API
-    const url = `${gitlabUrl}/api/v4/projects?membership=true&per_page=100&order_by=updated_at&sort=desc`;
+    const base = gitlabApiBase(gitlabUrl);
 
-    const response = await fetch(url, {
+    if (!base) {
+      return json({ error: 'GitLab URL must be a public http(s) address.' }, { status: 400 });
+    }
+
+    // Fetch user's projects from GitLab API
+    const url = `${base}/api/v4/projects?membership=true&per_page=100&order_by=updated_at&sort=desc`;
+
+    const { response } = await fetchAllowedUrl(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
@@ -74,6 +82,10 @@ async function gitlabProjectsLoader({ request }: { request: Request }) {
     });
   } catch (error) {
     console.error('Failed to fetch GitLab projects:', error);
+
+    if (error instanceof BlockedUrlError) {
+      return json({ error: 'GitLab URL must be a public http(s) address.' }, { status: 400 });
+    }
 
     if (error instanceof Error) {
       if (error.message.includes('fetch')) {

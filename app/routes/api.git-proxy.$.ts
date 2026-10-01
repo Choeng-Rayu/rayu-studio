@@ -1,5 +1,6 @@
 import { json } from '@remix-run/cloudflare';
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/cloudflare';
+import { BlockedUrlError, fetchAllowedUrl } from '~/utils/url';
 
 // Allowed headers to forward to the target server
 const ALLOW_HEADERS = [
@@ -107,11 +108,10 @@ async function handleProxyRequest(request: Request, path: string | undefined) {
 
     console.log('Request headers:', Object.fromEntries(headers.entries()));
 
-    // Prepare fetch options
+    // Prepare fetch options. Redirects are handled by fetchAllowedUrl, hop by hop.
     const fetchOptions: RequestInit = {
       method: request.method,
       headers,
-      redirect: 'follow',
     };
 
     // Add body for non-GET/HEAD requests
@@ -125,8 +125,12 @@ async function handleProxyRequest(request: Request, path: string | undefined) {
        */
     }
 
-    // Forward the request to the target URL
-    const response = await fetch(targetURL, fetchOptions);
+    /*
+     * Forward the request. This is an open CORS proxy for git, so the target (and every
+     * redirect) must be a public host: otherwise anyone could use Studio to reach the
+     * Docker network, Coolify's own services or the cloud metadata endpoint.
+     */
+    const { response, url: finalUrl, redirected } = await fetchAllowedUrl(targetURL, fetchOptions);
 
     console.log('Response status:', response.status);
 
@@ -152,8 +156,8 @@ async function handleProxyRequest(request: Request, path: string | undefined) {
     }
 
     // If the response was redirected, add the x-redirected-url header
-    if (response.redirected) {
-      responseHeaders.set('x-redirected-url', response.url);
+    if (redirected) {
+      responseHeaders.set('x-redirected-url', finalUrl);
     }
 
     console.log('Response headers:', Object.fromEntries(responseHeaders.entries()));
@@ -165,7 +169,12 @@ async function handleProxyRequest(request: Request, path: string | undefined) {
       headers: responseHeaders,
     });
   } catch (error) {
+    if (error instanceof BlockedUrlError) {
+      return json({ error: error.message }, { status: 403 });
+    }
+
     console.error('Proxy error:', error);
+
     return json(
       {
         error: 'Proxy error',

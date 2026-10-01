@@ -1,5 +1,7 @@
 import { json } from '@remix-run/cloudflare';
+import { gitlabApiBase, gitlabProjectPathSegment } from '~/lib/api/gitlab';
 import { withSecurity } from '~/lib/security';
+import { BlockedUrlError, fetchAllowedUrl } from '~/utils/url';
 
 interface GitLabBranch {
   name: string;
@@ -23,26 +25,34 @@ interface BranchInfo {
 async function gitlabBranchesLoader({ request }: { request: Request }) {
   try {
     const body: any = await request.json();
-    const { token, gitlabUrl = 'https://gitlab.com', projectId } = body;
+    const { token, gitlabUrl, projectId } = body;
 
     if (!token) {
       return json({ error: 'GitLab token is required' }, { status: 400 });
     }
 
-    if (!projectId) {
+    const project = gitlabProjectPathSegment(projectId);
+
+    if (!project) {
       return json({ error: 'Project ID is required' }, { status: 400 });
     }
 
-    // Fetch branches from GitLab API
-    const branchesUrl = `${gitlabUrl}/api/v4/projects/${projectId}/repository/branches?per_page=100`;
+    const base = gitlabApiBase(gitlabUrl);
 
-    const response = await fetch(branchesUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'User-Agent': 'rayucode-app',
-      },
-    });
+    if (!base) {
+      return json({ error: 'GitLab URL must be a public http(s) address.' }, { status: 400 });
+    }
+
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'User-Agent': 'rayucode-app',
+    };
+
+    // Fetch branches from GitLab API
+    const branchesUrl = `${base}/api/v4/projects/${project}/repository/branches?per_page=100`;
+
+    const { response } = await fetchAllowedUrl(branchesUrl, { headers });
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -67,14 +77,8 @@ async function gitlabBranchesLoader({ request }: { request: Request }) {
     const branches: GitLabBranch[] = await response.json();
 
     // Also fetch project info to get default branch name
-    const projectUrl = `${gitlabUrl}/api/v4/projects/${projectId}`;
-    const projectResponse = await fetch(projectUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'User-Agent': 'rayucode-app',
-      },
-    });
+    const projectUrl = `${base}/api/v4/projects/${project}`;
+    const { response: projectResponse } = await fetchAllowedUrl(projectUrl, { headers });
 
     let defaultBranchName = 'main'; // fallback
 
@@ -112,6 +116,10 @@ async function gitlabBranchesLoader({ request }: { request: Request }) {
     });
   } catch (error) {
     console.error('Failed to fetch GitLab branches:', error);
+
+    if (error instanceof BlockedUrlError) {
+      return json({ error: 'GitLab URL must be a public http(s) address.' }, { status: 400 });
+    }
 
     if (error instanceof Error) {
       if (error.message.includes('fetch')) {

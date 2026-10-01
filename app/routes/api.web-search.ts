@@ -1,6 +1,6 @@
 import { json } from '@remix-run/cloudflare';
 import type { ActionFunctionArgs } from '@remix-run/cloudflare';
-import { isAllowedUrl } from '~/utils/url';
+import { BlockedUrlError, fetchAllowedUrl, isAllowedUrl } from '~/utils/url';
 
 const MAX_CONTENT_LENGTH = 8000;
 
@@ -63,7 +63,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'URL is not allowed. Only public HTTP/HTTPS URLs are accepted.' }, { status: 400 });
     }
 
-    const response = await fetch(url, {
+    // Redirects are followed hop by hop and re-checked, so they cannot reach internal hosts.
+    const { response } = await fetchAllowedUrl(url, {
       headers: FETCH_HEADERS,
       signal: AbortSignal.timeout(10_000),
     });
@@ -93,6 +94,10 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
   } catch (error) {
+    if (error instanceof BlockedUrlError) {
+      return json({ error: error.message }, { status: 400 });
+    }
+
     if (error instanceof DOMException && error.name === 'TimeoutError') {
       return json({ error: 'Request timed out after 10 seconds' }, { status: 504 });
     }
