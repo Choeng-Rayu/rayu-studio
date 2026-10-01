@@ -1,5 +1,6 @@
 import { json } from '@remix-run/cloudflare';
 import type { ActionFunctionArgs } from '@remix-run/cloudflare';
+import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 import { BlockedUrlError, fetchAllowedUrl, isAllowedUrl } from '~/utils/url';
 
 const MAX_CONTENT_LENGTH = 8000;
@@ -47,11 +48,38 @@ function extractTextContent(html: string): string {
     .trim();
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request, context }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
 
+  /*
+   * Signed-in only, like chat (the only place this is used). The route returns the
+   * fetched page's text, so anonymously it was a public fetch proxy, and a hostname
+   * that resolves to an internal address could read it back to anyone.
+   */
+  let auth;
+
+  try {
+    auth = await getRayuAuth(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+  } catch {
+    return json({ error: 'Rayu authentication is temporarily unavailable.' }, { status: 503 });
+  }
+
+  if (!auth) {
+    return json({ error: 'Sign in to Rayu to use web search.' }, { status: 401 });
+  }
+
+  const response = await fetchPageText(request);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: appendAuthCookies(new Headers(response.headers), auth.setCookies),
+  });
+}
+
+async function fetchPageText(request: Request): Promise<Response> {
   try {
     const { url } = (await request.json()) as { url?: string };
 

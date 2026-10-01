@@ -52,6 +52,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return handleProxyRequest(request, params['*']);
 }
 
+const GIT_SERVICES = new Set(['git-upload-pack', 'git-receive-pack']);
+
+/** Ref discovery (GET .../info/refs?service=...) or a pack exchange (POST .../git-*-pack). */
+function isGitSmartHttpRequest(method: string, pathname: string, searchParams: URLSearchParams): boolean {
+  if (method === 'GET') {
+    return pathname.endsWith('/info/refs') && GIT_SERVICES.has(searchParams.get('service') ?? '');
+  }
+
+  if (method === 'POST') {
+    return pathname.endsWith('/git-upload-pack') || pathname.endsWith('/git-receive-pack');
+  }
+
+  return false;
+}
+
 async function handleProxyRequest(request: Request, path: string | undefined) {
   try {
     if (!path) {
@@ -85,6 +100,15 @@ async function handleProxyRequest(request: Request, path: string | undefined) {
     // Reconstruct the target URL with query parameters
     const url = new URL(request.url);
     const targetURL = `https://${domain}/${remainingPath}${url.search}`;
+
+    /*
+     * Only git smart-HTTP traffic, as in @isomorphic-git/cors-proxy's allow-list. This
+     * keeps the route a git proxy rather than an anonymous proxy for any URL, and
+     * limits what a hostname that resolves to an internal address could reach.
+     */
+    if (!isGitSmartHttpRequest(request.method, `/${remainingPath}`, url.searchParams)) {
+      return json({ error: 'Only git clone/fetch/push requests can be proxied' }, { status: 403 });
+    }
 
     console.log('Target URL:', targetURL);
 
