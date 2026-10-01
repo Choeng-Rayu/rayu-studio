@@ -1,11 +1,31 @@
 import { type ActionFunctionArgs, json } from '@remix-run/cloudflare';
 import crypto from 'crypto';
+import { base64ToBytes } from '~/components/deploy/deployUtils';
 import type { NetlifySiteInfo } from '~/types/netlify';
 
 interface DeployRequestBody {
   siteId?: string;
   files: Record<string, string>;
+
+  /** Files that are not UTF-8 text (images, fonts, ...), base64-encoded. */
+  binaryFiles?: Record<string, string>;
   chatId: string;
+}
+
+interface DeployUpload {
+  filePath: string;
+  body: string | Uint8Array;
+}
+
+/*
+ * Text and binary files in one list. Binary files are uploaded as their decoded bytes,
+ * and their digest is taken over those same bytes, so Netlify serves them unchanged.
+ */
+function collectUploads(files: Record<string, string> = {}, binaryFiles: Record<string, string> = {}): DeployUpload[] {
+  return [
+    ...Object.entries(files).map(([filePath, body]) => ({ filePath, body })),
+    ...Object.entries(binaryFiles).map(([filePath, base64]) => ({ filePath, body: base64ToBytes(base64) })),
+  ];
 }
 
 async function readNetlifyError(response: Response) {
@@ -27,10 +47,20 @@ async function readNetlifyError(response: Response) {
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const { siteId, files, token, chatId } = (await request.json()) as DeployRequestBody & { token: string };
+    const { siteId, files, binaryFiles, token, chatId } = (await request.json()) as DeployRequestBody & {
+      token: string;
+    };
 
     if (!token) {
       return json({ error: 'Not connected to Netlify' }, { status: 401 });
+    }
+
+    let uploads: DeployUpload[];
+
+    try {
+      uploads = collectUploads(files, binaryFiles);
+    } catch {
+      return json({ error: 'Invalid binary file encoding in deploy request' }, { status: 400 });
     }
 
     let targetSiteId = siteId;
@@ -126,10 +156,10 @@ export async function action({ request }: ActionFunctionArgs) {
     // Create file digests
     const fileDigests: Record<string, string> = {};
 
-    for (const [filePath, content] of Object.entries(files)) {
+    for (const { filePath, body } of uploads) {
       // Ensure file path starts with a forward slash
       const normalizedPath = filePath.startsWith('/') ? filePath : '/' + filePath;
-      const hash = crypto.createHash('sha1').update(content).digest('hex');
+      const hash = crypto.createHash('sha1').update(body).digest('hex');
       fileDigests[normalizedPath] = hash;
     }
 
@@ -183,7 +213,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if (!filesUploaded && (status.state === 'prepared' || status.state === 'uploaded')) {
         // Upload all files regardless of required array
-        for (const [filePath, content] of Object.entries(files)) {
+        for (const { filePath, body } of uploads) {
           const normalizedPath = filePath.startsWith('/') ? filePath : '/' + filePath;
           const encodedPath = normalizedPath
             .split('/')
@@ -203,7 +233,7 @@ export async function action({ request }: ActionFunctionArgs) {
                     Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/octet-stream',
                   },
-                  body: content,
+                  body,
                 },
               );
 

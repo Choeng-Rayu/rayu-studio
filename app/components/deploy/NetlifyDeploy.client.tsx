@@ -7,7 +7,7 @@ import { path } from '~/utils/path';
 import { useState } from 'react';
 import type { ActionCallbackData } from '~/lib/runtime/message-parser';
 import { chatId } from '~/lib/persistence/useChatHistory';
-import { formatBuildFailureOutput } from './deployUtils';
+import { formatBuildFailureOutput, readDeployFile } from './deployUtils';
 
 export function useNetlifyDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
@@ -115,29 +115,32 @@ export function useNetlifyDeploy() {
         throw new Error('Could not find build output directory. Please check your build configuration.');
       }
 
-      async function getAllFiles(dirPath: string): Promise<Record<string, string>> {
-        const files: Record<string, string> = {};
+      const files: Record<string, string> = {};
+      const binaryFiles: Record<string, string> = {};
+
+      async function collectFiles(dirPath: string): Promise<void> {
         const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
 
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
 
           if (entry.isFile()) {
-            const content = await container.fs.readFile(fullPath, 'utf-8');
-
             // Remove build path prefix from the path
             const deployPath = fullPath.replace(finalBuildPath, '');
-            files[deployPath] = content;
+            const file = await readDeployFile(container.fs, fullPath);
+
+            if (file.kind === 'text') {
+              files[deployPath] = file.content;
+            } else {
+              binaryFiles[deployPath] = file.base64;
+            }
           } else if (entry.isDirectory()) {
-            const subFiles = await getAllFiles(fullPath);
-            Object.assign(files, subFiles);
+            await collectFiles(fullPath);
           }
         }
-
-        return files;
       }
 
-      const fileContents = await getAllFiles(finalBuildPath);
+      await collectFiles(finalBuildPath);
 
       // Use chatId instead of artifact.id
       const existingSiteId = localStorage.getItem(`netlify-site-${currentChatId}`);
@@ -149,7 +152,8 @@ export function useNetlifyDeploy() {
         },
         body: JSON.stringify({
           siteId: existingSiteId || undefined,
-          files: fileContents,
+          files,
+          binaryFiles,
           token: netlifyConn.token,
           chatId: currentChatId,
         }),

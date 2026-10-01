@@ -235,16 +235,39 @@ interface DeployRequestBody {
   projectId?: string;
   files: Record<string, string>;
   sourceFiles?: Record<string, string>;
+
+  /** Build-output / source files that are not UTF-8 text (images, fonts, ...), base64-encoded. */
+  binaryFiles?: Record<string, string>;
+  binarySourceFiles?: Record<string, string>;
   chatId: string;
   framework?: string;
+}
+
+/*
+ * Vercel's inlined-file format takes `encoding: 'base64'` for binary content. Without
+ * it the bytes were sent as (lossy) UTF-8 text and images/fonts deployed corrupted.
+ */
+function toVercelFiles(textFiles: Record<string, string> = {}, binaryFiles: Record<string, string> = {}) {
+  // Ensure file paths don't start with a slash for Vercel
+  const normalize = (filePath: string) => (filePath.startsWith('/') ? filePath.substring(1) : filePath);
+
+  return [
+    ...Object.entries(textFiles).map(([filePath, data]) => ({ file: normalize(filePath), data })),
+    ...Object.entries(binaryFiles).map(([filePath, data]) => ({
+      file: normalize(filePath),
+      data,
+      encoding: 'base64' as const,
+    })),
+  ];
 }
 
 // Existing action function for POST requests
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const { projectId, files, sourceFiles, token, chatId, framework } = (await request.json()) as DeployRequestBody & {
-      token: string;
-    };
+    const { projectId, files, sourceFiles, binaryFiles, binarySourceFiles, token, chatId, framework } =
+      (await request.json()) as DeployRequestBody & {
+        token: string;
+      };
 
     if (!token) {
       return json({ error: 'Not connected to Vercel' }, { status: 401 });
@@ -343,7 +366,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Prepare files for deployment
-    const deploymentFiles = [];
+    let deploymentFiles: ReturnType<typeof toVercelFiles>;
 
     /*
      * For frameworks that need to build on Vercel, include source files
@@ -355,24 +378,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (shouldIncludeSourceFiles && sourceFiles) {
       // Include source files for frameworks that need to build
-      for (const [filePath, content] of Object.entries(sourceFiles)) {
-        // Ensure file path doesn't start with a slash for Vercel
-        const normalizedPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-        deploymentFiles.push({
-          file: normalizedPath,
-          data: content,
-        });
-      }
+      deploymentFiles = toVercelFiles(sourceFiles, binarySourceFiles);
     } else {
       // For static sites, only include build output
-      for (const [filePath, content] of Object.entries(files)) {
-        // Ensure file path doesn't start with a slash for Vercel
-        const normalizedPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-        deploymentFiles.push({
-          file: normalizedPath,
-          data: content,
-        });
-      }
+      deploymentFiles = toVercelFiles(files, binaryFiles);
     }
 
     // Create deployment configuration based on framework

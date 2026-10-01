@@ -7,7 +7,7 @@ import { path } from '~/utils/path';
 import { useState } from 'react';
 import type { ActionCallbackData } from '~/lib/runtime/message-parser';
 import { chatId } from '~/lib/persistence/useChatHistory';
-import { formatBuildFailureOutput } from './deployUtils';
+import { formatBuildFailureOutput, readDeployFile } from './deployUtils';
 
 export function useVercelDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
@@ -111,32 +111,40 @@ export function useVercelDeploy() {
       }
 
       // Get all files recursively
-      async function getAllFiles(dirPath: string): Promise<Record<string, string>> {
-        const files: Record<string, string> = {};
+      const files: Record<string, string> = {};
+      const binaryFiles: Record<string, string> = {};
+
+      async function collectFiles(dirPath: string): Promise<void> {
         const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
 
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
 
           if (entry.isFile()) {
-            const content = await container.fs.readFile(fullPath, 'utf-8');
-
             // Remove build path prefix from the path
             const deployPath = fullPath.replace(finalBuildPath, '');
-            files[deployPath] = content;
+            const file = await readDeployFile(container.fs, fullPath);
+
+            if (file.kind === 'text') {
+              files[deployPath] = file.content;
+            } else {
+              binaryFiles[deployPath] = file.base64;
+            }
           } else if (entry.isDirectory()) {
-            const subFiles = await getAllFiles(fullPath);
-            Object.assign(files, subFiles);
+            await collectFiles(fullPath);
           }
         }
-
-        return files;
       }
 
-      const fileContents = await getAllFiles(finalBuildPath);
+      await collectFiles(finalBuildPath);
 
-      // Get all source project files for framework detection
+      /*
+       * All source project files: framework detection, and the upload itself when
+       * Vercel builds the project. Images under public/ or src/assets are part of
+       * that upload, so they need the same binary-safe read as the build output.
+       */
       const allProjectFiles: Record<string, string> = {};
+      const binaryProjectFiles: Record<string, string> = {};
 
       async function getAllProjectFiles(dirPath: string): Promise<void> {
         const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
@@ -146,7 +154,7 @@ export function useVercelDeploy() {
 
           if (entry.isFile()) {
             try {
-              const content = await container.fs.readFile(fullPath, 'utf-8');
+              const file = await readDeployFile(container.fs, fullPath);
 
               // Store with relative path from project root
               let relativePath = fullPath;
@@ -157,9 +165,13 @@ export function useVercelDeploy() {
                 relativePath = fullPath.replace('./', '');
               }
 
-              allProjectFiles[relativePath] = content;
+              if (file.kind === 'text') {
+                allProjectFiles[relativePath] = file.content;
+              } else {
+                binaryProjectFiles[relativePath] = file.base64;
+              }
             } catch (error) {
-              // Skip binary files or files that can't be read as text
+              // Skip files that cannot be read
               console.log(`Skipping file ${entry.name}: ${error}`);
             }
           } else if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
@@ -186,8 +198,10 @@ export function useVercelDeploy() {
         },
         body: JSON.stringify({
           projectId: existingProjectId || undefined,
-          files: fileContents,
+          files,
+          binaryFiles,
           sourceFiles: allProjectFiles,
+          binarySourceFiles: binaryProjectFiles,
           token: vercelConn.token,
           chatId: currentChatId,
         }),
