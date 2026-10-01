@@ -85,6 +85,28 @@ describe('Rayu hosted provider', () => {
     );
   });
 
+  it('lists models the plan can use before the rest of the hosted catalog', async () => {
+    /*
+     * The client falls back to the FIRST model whenever the remembered one is not in
+     * the list; a model outside the plan is a 403 from the gateway on the first prompt.
+     */
+    const fetchSpy = vi.fn().mockResolvedValue(
+      Response.json({
+        plan: { code: 'pro' },
+        allowedModels: [{ code: 'model-b' }, { code: 'model-d' }],
+        hostedModels: [{ code: 'model-a' }, { code: 'model-b' }, { code: 'model-c' }, { code: 'model-d' }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const provider = new RayuHostedProvider();
+    const models = await provider.getDynamicModels({ Rayu: 'session-token' }, undefined, {
+      RAYU_BACKEND_URL: 'https://api.rayucode.com/api',
+    });
+
+    expect(models.map((model) => model.name)).toEqual(['model-b', 'model-d', 'model-a', 'model-c']);
+  });
+
   it('falls back to the older allowedModels response and rejects a missing catalog', async () => {
     const fetchSpy = vi
       .fn()

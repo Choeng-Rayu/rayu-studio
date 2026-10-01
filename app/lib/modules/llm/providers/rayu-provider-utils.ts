@@ -110,7 +110,22 @@ export async function rayuHostedModels(token: string | undefined, serverEnv?: Se
     throw new Error('Rayu entitlements response has no hosted model catalog.');
   }
 
-  return catalog
+  /*
+   * Usable models first. The whole catalog is listed on purpose (a Free account sees
+   * what an upgrade unlocks), but every "pick a model for me" path takes the FIRST
+   * entry: a new user, a remembered model that left the catalog, switching to Rayu.
+   * When that entry was outside the plan, the gateway answered the very first prompt
+   * with 403 "model not available on your plan". The sort is stable, so the
+   * catalog's own order is kept within each group.
+   */
+  const usable = new Set(
+    (Array.isArray(payload.allowedModels) ? payload.allowedModels : []).map((model) => model?.code),
+  );
+  const ordered = usable.size
+    ? [...catalog].sort((a, b) => Number(usable.has(b?.code)) - Number(usable.has(a?.code)))
+    : catalog;
+
+  return ordered
     .filter((model) => typeof model?.code === 'string' && model.code.length > 0)
     .map((model) => ({
       name: model.code,

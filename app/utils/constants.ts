@@ -99,7 +99,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Sveltekit',
     label: 'SvelteKit',
     description: 'SvelteKit starter template for building fast, efficient web applications',
-    githubRepo: 'bolt-sveltekit-template',
+    githubRepo: 'xKevIsDev/bolt-sveltekit-template',
     tags: ['svelte', 'sveltekit', 'typescript'],
     icon: 'i-rayu:svelte',
   },

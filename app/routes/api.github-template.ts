@@ -3,6 +3,17 @@ import JSZip from 'jszip';
 
 // Function to detect if we're running in Cloudflare
 function isCloudflareEnvironment(context: any): boolean {
+  /*
+   * The Docker image serves the app with `wrangler pages dev`, which injects the same
+   * CF_PAGES_* variables as real Pages. Treating the container as Pages sent it down
+   * the per-file Contents API path: one GitHub API call per template file against an
+   * unauthenticated limit of 60/hour shared by every user of the server. The container
+   * has no Workers CPU limit, so the 2-request zipball path is the right one there.
+   */
+  if (String(context?.cloudflare?.env?.RUNNING_IN_DOCKER ?? '').toLowerCase() === 'true') {
+    return false;
+  }
+
   // Check if we're in production AND have Cloudflare Pages specific env vars
   const isProduction = process.env.NODE_ENV === 'production';
   const hasCfPagesVars = !!(
@@ -109,7 +120,23 @@ async function fetchRepoContentsCloudflare(repo: string, githubToken?: string) {
     });
 
     const batchResults = await Promise.all(batchPromises);
-    fileContents.push(...batchResults.filter(Boolean));
+
+    /*
+     * A template with silently missing files (typically package.json or index.html once
+     * the GitHub rate limit trips mid-download) imports "successfully" and then cannot
+     * install or start. Fail the import instead; the client falls back to a blank
+     * project, which the model can build correctly.
+     */
+    const missingFiles = batch.filter((_file: any, index: number) => !batchResults[index]);
+
+    if (missingFiles.length > 0) {
+      throw new Error(
+        `Could not download ${missingFiles.length} template file(s) from ${repo} (first: ${missingFiles[0].path}). ` +
+          'GitHub may be rate limiting this server; set GITHUB_TOKEN to raise the limit.',
+      );
+    }
+
+    fileContents.push(...batchResults);
 
     // Add a small delay between batches to be respectful to the API
     if (i + batchSize < files.length) {
@@ -143,6 +170,11 @@ async function fetchRepoContentsZip(repo: string, githubToken?: string) {
   // Fetch the zipball
   const zipResponse = await fetch(zipballUrl, {
     headers: {
+      /*
+       * GitHub rejects API requests without a User-Agent (403). Node's fetch adds one
+       * by default; workerd's does not, so this path only ever worked under `pnpm dev`.
+       */
+      'User-Agent': 'rayucode-app',
       ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
     },
   });
