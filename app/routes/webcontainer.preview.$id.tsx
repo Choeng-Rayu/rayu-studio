@@ -11,6 +11,15 @@ export async function loader({ params }: LoaderFunctionArgs) {
     throw new Response('Preview ID is required', { status: 400 });
   }
 
+  /*
+   * The id becomes the subdomain of the iframe URL below, so it must be a single DNS
+   * label. Otherwise /webcontainer/preview/evil.example%2F%3F would frame any site
+   * inside Studio's own page.
+   */
+  if (!/^[a-z0-9-]{1,63}$/i.test(previewId)) {
+    throw new Response('Invalid preview ID', { status: 400 });
+  }
+
   return json({ previewId });
 }
 
