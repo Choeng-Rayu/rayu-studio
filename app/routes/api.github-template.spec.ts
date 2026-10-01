@@ -1,13 +1,18 @@
 import JSZip from 'jszip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STARTER_TEMPLATES } from '~/utils/constants';
 import { loader } from './api.github-template';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
-const templateRequest = () => new Request('http://studio.example.com/api/github-template?repo=owner/template');
+const TEMPLATE_REPO = STARTER_TEMPLATES.find((template) => template.name === 'Vanilla Vite')!.githubRepo;
+
+const templateRequest = (repo = TEMPLATE_REPO) =>
+  new Request(`http://studio.example.com/api/github-template?repo=${encodeURIComponent(repo)}`);
 
 describe('starter template import', () => {
   it('uses the 2-request zipball path in the Docker image even though wrangler sets CF_PAGES', async () => {
@@ -26,8 +31,8 @@ describe('starter template import', () => {
         return new Response('Request forbidden: missing User-Agent', { status: 403 });
       }
 
-      if (url.endsWith('/repos/owner/template/releases/latest')) {
-        return Response.json({ zipball_url: 'https://api.github.com/repos/owner/template/zipball/template' });
+      if (url.endsWith(`/repos/${TEMPLATE_REPO}/releases/latest`)) {
+        return Response.json({ zipball_url: `https://api.github.com/repos/${TEMPLATE_REPO}/zipball/template` });
       }
 
       if (url.endsWith('/zipball/template')) {
@@ -50,48 +55,87 @@ describe('starter template import', () => {
     expect(files.find((file) => file.path === 'index.html')?.content).toBe('<p>© Rayu</p>');
   });
 
-  it('fails instead of returning a partial template when a file download fails', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
-
-    const fetchSpy = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-
-      if (url.endsWith('/repos/owner/template')) {
-        return Response.json({ default_branch: 'main' });
-      }
-
-      if (url.includes('/git/trees/main')) {
-        return Response.json({
-          tree: [
-            { type: 'blob', path: 'index.html', size: 10 },
-            { type: 'blob', path: 'package.json', size: 10 },
-          ],
-        });
-      }
-
-      if (url.endsWith('/contents/index.html')) {
-        return Response.json({ content: btoa('<p>hi</p>') });
-      }
-
-      if (url.endsWith('/contents/package.json')) {
-        return new Response('API rate limit exceeded', { status: 403 });
-      }
-
-      throw new Error(`Unexpected request: ${url}`);
-    });
+  it('refuses repositories that are not built-in starter templates, without calling GitHub', async () => {
+    const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    // Real Cloudflare Pages (no RUNNING_IN_DOCKER) keeps the per-file Contents API path.
-    const response = await loader({
-      request: templateRequest(),
-      context: { cloudflare: { env: { CF_PAGES: '1' } } },
+    for (const repo of ['someone/private-repo', '../../user/repos?', `${TEMPLATE_REPO}/../../other`]) {
+      const response = await loader({
+        request: templateRequest(repo),
+        context: { cloudflare: { env: { GITHUB_TOKEN: 'server-token', RUNNING_IN_DOCKER: 'true' } } },
+      });
+
+      expect(response.status).toBe(400);
+    }
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  describe('per-file Contents API path (real Cloudflare Pages)', () => {
+    const contentsFetch = (files: Record<string, Response | (() => Response)>) =>
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+
+        if (url.endsWith(`/repos/${TEMPLATE_REPO}`)) {
+          return Response.json({ default_branch: 'main' });
+        }
+
+        if (url.includes('/git/trees/main')) {
+          return Response.json({
+            tree: Object.keys(files).map((path) => ({ type: 'blob', path, size: 10 })),
+          });
+        }
+
+        const path = url.split('/contents/')[1];
+
+        if (path && path in files) {
+          const response = files[path];
+          return typeof response === 'function' ? response() : response;
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+      });
+
+    it('decodes file contents as UTF-8 instead of garbling non-ASCII text', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+
+      const html = '<p>© Rayu — 日本語 ✓</p>';
+      vi.stubGlobal(
+        'fetch',
+        contentsFetch({ 'index.html': Response.json({ content: Buffer.from(html).toString('base64') }) }),
+      );
+
+      const response = await loader({
+        request: templateRequest(),
+        context: { cloudflare: { env: { CF_PAGES: '1' } } },
+      });
+      const files = (await response.json()) as Array<{ path: string; content: string }>;
+
+      expect(response.status).toBe(200);
+      expect(files).toEqual([{ name: 'index.html', path: 'index.html', content: html }]);
     });
-    const payload = (await response.json()) as { error: string; details: string };
 
-    expect(response.status).toBe(500);
-    expect(payload.details).toContain('package.json');
-    expect(payload.details).toContain('GITHUB_TOKEN');
+    it('fails instead of returning a partial template when a file download fails', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubGlobal(
+        'fetch',
+        contentsFetch({
+          'index.html': Response.json({ content: btoa('<p>hi</p>') }),
+          'package.json': () => new Response('API rate limit exceeded', { status: 403 }),
+        }),
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const response = await loader({
+        request: templateRequest(),
+        context: { cloudflare: { env: { CF_PAGES: '1' } } },
+      });
+      const payload = (await response.json()) as { error: string; details: string };
+
+      expect(response.status).toBe(500);
+      expect(payload.details).toContain('package.json');
+      expect(payload.details).toContain('GITHUB_TOKEN');
+    });
   });
 });

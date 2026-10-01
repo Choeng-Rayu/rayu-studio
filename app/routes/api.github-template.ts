@@ -1,5 +1,7 @@
 import { json } from '@remix-run/cloudflare';
 import JSZip from 'jszip';
+import { base64ToBytes } from '~/components/deploy/deployUtils';
+import { STARTER_TEMPLATES } from '~/utils/constants';
 
 // Function to detect if we're running in Cloudflare
 function isCloudflareEnvironment(context: any): boolean {
@@ -106,7 +108,9 @@ async function fetchRepoContentsCloudflare(repo: string, githubToken?: string) {
         }
 
         const contentData = (await contentResponse.json()) as any;
-        const content = atob(contentData.content.replace(/\s/g, ''));
+
+        // GitHub returns base64 of the file's bytes; decode those bytes as UTF-8 (atob alone garbles non-ASCII text).
+        const content = new TextDecoder().decode(base64ToBytes(contentData.content.replace(/\s/g, '')));
 
         return {
           name: file.path.split('/').pop() || '',
@@ -239,6 +243,15 @@ export async function loader({ request, context }: { request: Request; context: 
 
   if (!repo) {
     return json({ error: 'Repository name is required' }, { status: 400 });
+  }
+
+  /*
+   * Only the built-in starter templates. This route downloads with the SERVER's
+   * GitHub token for anonymous callers; with an arbitrary `repo` anyone could pull
+   * any repository that token can read, private ones included.
+   */
+  if (!STARTER_TEMPLATES.some((template) => template.githubRepo === repo)) {
+    return json({ error: 'Unknown starter template' }, { status: 400 });
   }
 
   try {
