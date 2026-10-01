@@ -105,7 +105,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
   let progressCounter: number = 1;
 
   try {
-    const mcpService = MCPService.getInstance();
+    // This user's MCP tools only; another user's servers must never reach this prompt.
+    const mcpService = MCPService.forUser(rayuAuth.user.id);
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 

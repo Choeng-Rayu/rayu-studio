@@ -1,44 +1,17 @@
 import type { LoaderFunction } from '@remix-run/cloudflare';
-import { LLMManager } from '~/lib/modules/llm/manager';
 import { getApiKeysFromCookie } from '~/lib/api/cookies';
 
-export const loader: LoaderFunction = async ({ context, request }) => {
-  // Get API keys from cookie
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeysFromCookie = getApiKeysFromCookie(cookieHeader);
+/**
+ * Export the API keys THIS browser saved (Settings → Data → Export API keys).
+ *
+ * Only the caller's own cookie keys are returned. This route used to merge in the
+ * server's provider keys from its environment (OPENAI_API_KEY, ANTHROPIC_API_KEY, …)
+ * with no authentication, so on a shared deployment any visitor could download the
+ * operator's keys. Server-side keys stay usable for chat; they just never leave the
+ * server. `/api/check-env-key` still reports whether one is configured.
+ */
+export const loader: LoaderFunction = async ({ request }) => {
+  const apiKeys = getApiKeysFromCookie(request.headers.get('Cookie'));
 
-  // Initialize the LLM manager to access environment variables
-  const llmManager = LLMManager.getInstance(context?.cloudflare?.env as any);
-
-  // Get all provider instances to find their API token keys
-  const providers = llmManager.getAllProviders();
-
-  // Create a comprehensive API keys object
-  const apiKeys: Record<string, string> = { ...apiKeysFromCookie };
-
-  // For each provider, check all possible sources for API keys
-  for (const provider of providers) {
-    if (!provider.config.apiTokenKey) {
-      continue;
-    }
-
-    const envVarName = provider.config.apiTokenKey;
-
-    // Skip if we already have this provider's key from cookies
-    if (apiKeys[provider.name]) {
-      continue;
-    }
-
-    // Check environment variables in order of precedence
-    const envValue =
-      (context?.cloudflare?.env as Record<string, any>)?.[envVarName] ||
-      process.env[envVarName] ||
-      llmManager.env[envVarName];
-
-    if (envValue) {
-      apiKeys[provider.name] = envValue;
-    }
-  }
-
-  return Response.json(apiKeys);
+  return Response.json(apiKeys, { headers: { 'Cache-Control': 'no-store' } });
 };

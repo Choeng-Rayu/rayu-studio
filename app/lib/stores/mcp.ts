@@ -148,7 +148,7 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
       const response = await fetch('/api/mcp-check', { method: 'GET' });
 
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+        throw mcpRequestError(response);
       }
 
       let serverTools = (await response.json()) as MCPServerTools;
@@ -170,6 +170,15 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
   },
 }));
 
+/** MCP connections are per Rayu account on the server, so a signed-out browser gets 401. */
+function mcpRequestError(response: Response): Error {
+  if (response.status === 401) {
+    return new Error('Sign in to Rayu to connect MCP servers.');
+  }
+
+  return new Error(`Server responded with ${response.status}: ${response.statusText}`);
+}
+
 async function updateServerConfig(config: MCPConfig) {
   const response = await fetch('/api/mcp-update-config', {
     method: 'POST',
@@ -178,7 +187,7 @@ async function updateServerConfig(config: MCPConfig) {
   });
 
   if (!response.ok) {
-    throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+    throw mcpRequestError(response);
   }
 
   const data = (await response.json()) as MCPServerTools;

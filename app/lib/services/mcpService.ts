@@ -20,6 +20,9 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('mcp-service');
 
+// Users whose MCP clients stay connected in this server process at the same time.
+const MAX_USER_SERVICES = 200;
+
 export const stdioServerConfigSchema = z
   .object({
     type: z.enum(['stdio']).optional(),
@@ -102,7 +105,13 @@ export type MCPServerUnavailable = {
 export type MCPServer = MCPServerAvailable | MCPServerUnavailable;
 
 export class MCPService {
-  private static _instance: MCPService;
+  /*
+   * One service per signed-in Rayu user, never one per server. A process-wide
+   * singleton let any caller replace every user's MCP config, put their tool
+   * descriptions into every other user's prompts, and (because tool approval is
+   * client-side) execute another user's tools with that user's configured headers.
+   */
+  private static _instances = new Map<string, MCPService>();
   private _tools: ToolSet = {};
   private _toolsWithoutExecute: ToolSet = {};
   private _mcpToolsPerServer: MCPServerTools = {};
@@ -111,12 +120,27 @@ export class MCPService {
     mcpServers: {},
   };
 
-  static getInstance(): MCPService {
-    if (!MCPService._instance) {
-      MCPService._instance = new MCPService();
+  /** The MCP service of one Rayu user (`RayuUser.id`). Least-recently-used users are evicted. */
+  static forUser(userId: string | number): MCPService {
+    const key = String(userId);
+    const service = MCPService._instances.get(key) ?? new MCPService();
+
+    // Re-insert so Map order tracks recency.
+    MCPService._instances.delete(key);
+    MCPService._instances.set(key, service);
+
+    while (MCPService._instances.size > MAX_USER_SERVICES) {
+      const [oldestKey, oldest] = MCPService._instances.entries().next().value as [string, MCPService];
+      MCPService._instances.delete(oldestKey);
+
+      /*
+       * The browser keeps the config and re-sends it when /api/mcp-check sees the
+       * server lost it (stores/mcp.ts), so eviction only costs a reconnect.
+       */
+      void oldest._closeClients();
     }
 
-    return MCPService._instance;
+    return service;
   }
 
   private _validateServerConfig(serverName: string, config: any): MCPServerConfig {
