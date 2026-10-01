@@ -1,33 +1,69 @@
 #!/bin/bash
+#
+# Builds `--binding NAME=value` arguments for `wrangler pages dev`.
+#
+#   ./bindings.sh -- <command> [args...]
+#       Runs <command> with the bindings appended as separate, verbatim arguments.
+#       Use this form: values may contain spaces, quotes or `*` (AWS_BEDROCK_CONFIG is
+#       JSON with spaces) and still arrive intact.
+#
+#   ./bindings.sh
+#       Legacy: prints the arguments space-separated for `$(./bindings.sh)`. The
+#       caller's word splitting breaks any value that contains whitespace.
+#
+# Values come from .env.local when it exists, otherwise from the environment for
+# every name declared in worker-configuration.d.ts.
 
-bindings=""
+args=()
 
-# Function to extract variable names from the TypeScript interface
-extract_env_vars() {
-  grep -o '[A-Z_]\+:' worker-configuration.d.ts | sed 's/://'
+add_binding() {
+  args+=(--binding "$1=$2")
 }
 
-# First try to read from .env.local if it exists
+# Names declared in the Env interface, e.g. "  OPENAI_API_KEY: string;". Names may be
+# mixed case (HuggingFace_API_KEY), so match whole identifiers at the start of a line.
+extract_env_vars() {
+  grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*:' worker-configuration.d.ts | tr -d ' \t:'
+}
+
 if [ -f ".env.local" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
-    if [[ ! "$line" =~ ^# ]] && [[ -n "$line" ]]; then
-      name=$(echo "$line" | cut -d '=' -f 1)
-      value=$(echo "$line" | cut -d '=' -f 2-)
-      value=$(echo $value | sed 's/^"\(.*\)"$/\1/')
-      bindings+="--binding ${name}=${value} "
+    line="${line%$'\r'}"
+
+    # Skip blank lines, comments, and anything that is not NAME=value.
+    if [[ "$line" =~ ^[[:space:]]*(#|$) ]] || [[ "$line" != *=* ]]; then
+      continue
     fi
+
+    name="${line%%=*}"
+    name="${name#export }"
+    name="${name//[[:space:]]/}"
+    value="${line#*=}"
+
+    # Strip one pair of matching surrounding quotes; keep the inside verbatim.
+    if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+
+    add_binding "$name" "$value"
   done < .env.local
 else
-  # If .env.local doesn't exist, use environment variables defined in .d.ts
-  env_vars=($(extract_env_vars))
-  # Generate bindings for each environment variable if it exists
-  for var in "${env_vars[@]}"; do
-    if [ -n "${!var}" ]; then
-      bindings+="--binding ${var}=${!var} "
+  while IFS= read -r var; do
+    if [ -n "$var" ] && [ -n "${!var:-}" ]; then
+      add_binding "$var" "${!var}"
     fi
-  done
+  done < <(extract_env_vars)
 fi
 
-bindings=$(echo $bindings | sed 's/[[:space:]]*$//')
+if [ "${1:-}" = "--" ]; then
+  shift
 
-echo $bindings
+  if [ $# -eq 0 ]; then
+    echo "bindings.sh: missing command after --" >&2
+    exit 2
+  fi
+
+  exec "$@" "${args[@]}"
+fi
+
+echo "${args[*]}"

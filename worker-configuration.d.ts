@@ -23,4 +23,6 @@ interface Env {
   VITE_RAYU_BACKEND_URL: string;
   RAYU_GATEWAY_URL: string;
   RAYU_STUDIO_AUTH_BRIDGE_URL: string;
+  // Optional. Raises GitHub's 60 req/hour anonymous limit for starter-template imports.
+  GITHUB_TOKEN: string;
 }

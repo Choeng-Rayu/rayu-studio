@@ -17,6 +17,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 ARG VITE_PUBLIC_APP_URL
 ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
 
+# Browser-side Rayu backend URL (Web Bridge socket on /remote). Vite inlines VITE_*
+# values at build time, and .env files are not in the build context, so a Coolify
+# "build variable" only reaches `pnpm run build` if it is declared here. Empty keeps
+# the default (https://api.rayucode.com/api).
+ARG VITE_RAYU_BACKEND_URL
+ENV VITE_RAYU_BACKEND_URL=${VITE_RAYU_BACKEND_URL}
+
 # Install deps efficiently
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm fetch
@@ -76,8 +83,12 @@ ENV WRANGLER_SEND_METRICS=false \
 # Note: API keys should be provided at runtime via docker run -e or docker-compose
 # Example: docker run -e OPENAI_API_KEY=your_key_here ...
 
-# Install curl for healthchecks and copy bindings script
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for healthchecks, plus the system CA store. The slim base image
+# ships none, and workerd (unlike Node, which bundles its own CAs) verifies TLS
+# against /etc/ssl/certs: without it every outbound HTTPS fetch from the server
+# (Rayu auth + gateway, Netlify/Vercel deploys, GitHub templates) fails with
+# "TLS peer's certificate is not trusted".
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy built files and scripts
@@ -95,9 +106,16 @@ RUN chmod +x /app/bindings.sh
 
 EXPOSE 5173
 
-# Healthcheck for deployment platforms
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
-  CMD curl -fsS http://localhost:5173/ || exit 1
+# Healthcheck for deployment platforms (Coolify reads this).
+# - /api/health goes through the same Remix server bundle as every page, so a
+#   bundle that cannot load still fails, without paying for a full SSR render
+#   every interval.
+# - `wrangler pages dev` bundles functions/ at boot, which took ~30-40s on the
+#   Coolify server; with a 5s start period most retries were spent before the
+#   server was even listening.
+# - 127.0.0.1, not localhost: wrangler binds IPv4 only.
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=10 \
+  CMD curl -fsS http://127.0.0.1:5173/api/health || exit 1
 
 # Start using dockerstart script with Wrangler
 CMD ["pnpm", "run", "dockerstart"]
