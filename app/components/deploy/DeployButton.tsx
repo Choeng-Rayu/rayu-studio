@@ -34,7 +34,10 @@ export const DeployButton = ({
   const gitlabIsConnected = useStore(isGitLabConnected);
   const [activePreviewIndex] = useState(0);
   const previews = useStore(workbenchStore.previews);
+  useStore(workbenchStore.artifacts);
+
   const activePreview = previews[activePreviewIndex];
+  const hasProject = Boolean(workbenchStore.firstArtifact);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployingTo, setDeployingTo] = useState<'netlify' | 'vercel' | 'github' | 'gitlab' | null>(null);
   const isStreaming = useStore(streamingState);
@@ -130,7 +133,7 @@ export const DeployButton = ({
       <div className="flex border border-rayu-elements-borderColor rounded-md overflow-hidden text-sm">
         <DropdownMenu.Root>
           <DropdownMenu.Trigger
-            disabled={isDeploying || !activePreview || isStreaming}
+            disabled={isDeploying || (!activePreview && !hasProject) || isStreaming}
             className="rounded-md items-center justify-center [&:is(:disabled,.disabled)]:cursor-not-allowed [&:is(:disabled,.disabled)]:opacity-60 px-3 py-1.5 text-xs bg-accent-500 text-white hover:text-rayu-elements-item-contentAccent [&:not(:disabled,.disabled)]:hover:bg-rayu-elements-button-primary-backgroundHover outline-accent-500 flex gap-1.7"
           >
             {isDeploying ? `Deploying to ${deployingTo}...` : 'Deploy'}
@@ -152,10 +155,10 @@ export const DeployButton = ({
               className={classNames(
                 'cursor-pointer flex items-center w-full px-4 py-2 text-sm text-rayu-elements-textPrimary hover:bg-rayu-elements-item-backgroundActive gap-2 rounded-md group relative',
                 {
-                  'opacity-60 cursor-not-allowed': isDeploying || !activePreview || !netlifyConn.user,
+                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject || !netlifyConn.user,
                 },
               )}
-              disabled={isDeploying || !activePreview || !netlifyConn.user}
+              disabled={isDeploying || !hasProject || !netlifyConn.user}
               onClick={handleNetlifyDeployClick}
             >
               <img
@@ -175,10 +178,10 @@ export const DeployButton = ({
               className={classNames(
                 'cursor-pointer flex items-center w-full px-4 py-2 text-sm text-rayu-elements-textPrimary hover:bg-rayu-elements-item-backgroundActive gap-2 rounded-md group relative',
                 {
-                  'opacity-60 cursor-not-allowed': isDeploying || !activePreview || !vercelConn.user,
+                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject || !vercelConn.user,
                 },
               )}
-              disabled={isDeploying || !activePreview || !vercelConn.user}
+              disabled={isDeploying || !hasProject || !vercelConn.user}
               onClick={handleVercelDeployClick}
             >
               <img
@@ -211,7 +214,7 @@ export const DeployButton = ({
                 src="https://cdn.simpleicons.org/github"
                 alt="github"
               />
-              <span className="mx-auto">Deploy to GitHub</span>
+              <span className="mx-auto">Sync code to GitHub</span>
             </DropdownMenu.Item>
 
             <DropdownMenu.Item
@@ -232,7 +235,9 @@ export const DeployButton = ({
                 src="https://cdn.simpleicons.org/gitlab"
                 alt="gitlab"
               />
-              <span className="mx-auto">{!gitlabIsConnected ? 'No GitLab Account Connected' : 'Deploy to GitLab'}</span>
+              <span className="mx-auto">
+                {!gitlabIsConnected ? 'No GitLab Account Connected' : 'Sync code to GitLab'}
+              </span>
             </DropdownMenu.Item>
 
             <DropdownMenu.Item

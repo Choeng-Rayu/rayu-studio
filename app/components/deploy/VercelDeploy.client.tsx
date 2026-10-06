@@ -7,7 +7,7 @@ import { path } from '~/utils/path';
 import { useState } from 'react';
 import type { ActionCallbackData } from '~/lib/runtime/message-parser';
 import { chatId } from '~/lib/persistence/useChatHistory';
-import { formatBuildFailureOutput, readDeployFile } from './deployUtils';
+import { addRayuCodeCredit, formatBuildFailureOutput, readDeployFile } from './deployUtils';
 
 export function useVercelDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
@@ -126,7 +126,7 @@ export function useVercelDeploy() {
             const file = await readDeployFile(container.fs, fullPath);
 
             if (file.kind === 'text') {
-              files[deployPath] = file.content;
+              files[deployPath] = addRayuCodeCredit(deployPath, file.content);
             } else {
               binaryFiles[deployPath] = file.base64;
             }
@@ -166,7 +166,7 @@ export function useVercelDeploy() {
               }
 
               if (file.kind === 'text') {
-                allProjectFiles[relativePath] = file.content;
+                allProjectFiles[relativePath] = addRayuCodeCredit(relativePath, file.content);
               } else {
                 binaryProjectFiles[relativePath] = file.base64;
               }

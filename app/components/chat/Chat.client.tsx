@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react';
 import type { Message } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useAnimate } from 'framer-motion';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
@@ -61,17 +61,11 @@ export function Chat() {
 const processSampledMessages = createSampler(
   (options: {
     messages: Message[];
-    initialMessages: Message[];
     isLoading: boolean;
     parseMessages: (messages: Message[], isLoading: boolean) => void;
-    storeMessageHistory: (messages: Message[]) => Promise<void>;
   }) => {
-    const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory } = options;
+    const { messages, isLoading, parseMessages } = options;
     parseMessages(messages, isLoading);
-
-    if (messages.length > initialMessages.length) {
-      storeMessageHistory(messages).catch((error) => toast.error(error.message));
-    }
   },
   50,
 );
@@ -84,6 +78,13 @@ interface ChatProps {
   description?: string;
 }
 
+type RenderedMessageCacheEntry = {
+  content: string;
+  parts: Message['parts'];
+  annotations: Message['annotations'];
+  rendered: Message;
+};
+
 export const ChatImpl = memo(
   ({ description, initialMessages, storeMessageHistory, importChat, exportChat }: ChatProps) => {
     useShortcuts();
@@ -91,6 +92,8 @@ export const ChatImpl = memo(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualProviderSelection = useRef(false);
     const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
+    const latestMessagesRef = useRef(initialMessages);
+    const lastSavedLengthRef = useRef(initialMessages.length);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -243,6 +246,37 @@ export const ChatImpl = memo(
 
     const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
     const { parsedMessages, parseMessages } = useMessageParser();
+    const renderedMessageCache = useRef(new Map<string, RenderedMessageCacheEntry>());
+    const renderedMessages = useMemo(() => {
+      const nextCache = new Map<string, RenderedMessageCacheEntry>();
+      const result = messages.map((message, index) => {
+        if (message.role === 'user') {
+          return message;
+        }
+
+        const key = message.id || String(index);
+        const content = parsedMessages[index] || '';
+        const previous = renderedMessageCache.current.get(key);
+
+        if (
+          previous &&
+          previous.content === content &&
+          previous.parts === message.parts &&
+          previous.annotations === message.annotations
+        ) {
+          nextCache.set(key, previous);
+          return previous.rendered;
+        }
+
+        const rendered = { ...message, content };
+        nextCache.set(key, { content, parts: message.parts, annotations: message.annotations, rendered });
+
+        return rendered;
+      });
+      renderedMessageCache.current = nextCache;
+
+      return result;
+    }, [messages, parsedMessages]);
 
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
@@ -253,12 +287,39 @@ export const ChatImpl = memo(
     useEffect(() => {
       processSampledMessages({
         messages,
-        initialMessages,
         isLoading,
         parseMessages,
-        storeMessageHistory,
       });
     }, [messages, isLoading, parseMessages]);
+
+    latestMessagesRef.current = messages;
+
+    useEffect(() => {
+      if (messages.length <= initialMessages.length) {
+        return;
+      }
+
+      if (messages.length > lastSavedLengthRef.current || !isLoading) {
+        lastSavedLengthRef.current = messages.length;
+        void storeMessageHistory(messages).catch((error) => toast.error(error.message));
+      }
+    }, [messages, isLoading, initialMessages.length, storeMessageHistory]);
+
+    useEffect(() => {
+      if (!isLoading) {
+        return undefined;
+      }
+
+      const timer = window.setInterval(() => {
+        const currentMessages = latestMessagesRef.current;
+
+        if (currentMessages.length > initialMessages.length) {
+          void storeMessageHistory(currentMessages).catch((error) => toast.error(error.message));
+        }
+      }, 5_000);
+
+      return () => window.clearInterval(timer);
+    }, [isLoading, initialMessages.length, storeMessageHistory]);
 
     const scrollTextArea = () => {
       const textarea = textareaRef.current;
@@ -806,16 +867,7 @@ export const ChatImpl = memo(
           description={description}
           importChat={importChat}
           exportChat={exportChat}
-          messages={messages.map((message, i) => {
-            if (message.role === 'user') {
-              return message;
-            }
-
-            return {
-              ...message,
-              content: parsedMessages[i] || '',
-            };
-          })}
+          messages={renderedMessages}
           enhancePrompt={() => {
             enhancePrompt(
               input,

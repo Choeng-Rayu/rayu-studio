@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { useStore } from '@nanostores/react';
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { classNames } from '~/utils/classNames';
@@ -24,11 +24,12 @@ import { EventLogsTab } from '~/components/@settings/tabs/event-logs/EventLogsTa
 import GitHubTab from '~/components/@settings/tabs/github/GitHubTab';
 import GitLabTab from '~/components/@settings/tabs/gitlab/GitLabTab';
 import SupabaseTab from '~/components/@settings/tabs/supabase/SupabaseTab';
-import VercelTab from '~/components/@settings/tabs/vercel/VercelTab';
-import NetlifyTab from '~/components/@settings/tabs/netlify/NetlifyTab';
 import CloudProvidersTab from '~/components/@settings/tabs/providers/cloud/CloudProvidersTab';
 import LocalProvidersTab from '~/components/@settings/tabs/providers/local/LocalProvidersTab';
 import McpTab from '~/components/@settings/tabs/mcp/McpTab';
+
+const VercelTab = lazy(() => import('~/components/@settings/tabs/vercel/VercelTab'));
+const NetlifyTab = lazy(() => import('~/components/@settings/tabs/netlify/NetlifyTab'));
 
 interface ControlPanelProps {
   open: boolean;
@@ -302,7 +303,11 @@ export const ControlPanel = ({ open, onClose }: ControlPanelProps) => {
                     )}
                   >
                     {activeTab ? (
-                      getTabComponent(activeTab)
+                      <Suspense
+                        fallback={<div className="text-sm text-rayu-elements-textSecondary">Loading settings…</div>}
+                      >
+                        {getTabComponent(activeTab)}
+                      </Suspense>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative">
                         {visibleTabs.map((tab, index) => (

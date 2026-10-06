@@ -7,7 +7,7 @@ import { path } from '~/utils/path';
 import { useState } from 'react';
 import type { ActionCallbackData } from '~/lib/runtime/message-parser';
 import { chatId } from '~/lib/persistence/useChatHistory';
-import { formatBuildFailureOutput, readDeployFile } from './deployUtils';
+import { addRayuCodeCredit, formatBuildFailureOutput, readDeployFile } from './deployUtils';
 
 export function useNetlifyDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
@@ -130,7 +130,7 @@ export function useNetlifyDeploy() {
             const file = await readDeployFile(container.fs, fullPath);
 
             if (file.kind === 'text') {
-              files[deployPath] = file.content;
+              files[deployPath] = addRayuCodeCredit(deployPath, file.content);
             } else {
               binaryFiles[deployPath] = file.base64;
             }
@@ -177,38 +177,32 @@ export function useNetlifyDeploy() {
       let deploymentStatus;
 
       while (attempts < maxAttempts) {
-        try {
-          const statusResponse = await fetch(
-            `https://api.netlify.com/api/v1/sites/${data.site.id}/deploys/${data.deploy.id}`,
-            {
-              headers: {
-                Authorization: `Bearer ${netlifyConn.token}`,
-              },
-            },
-          );
+        const statusResponse = await fetch(
+          `https://api.netlify.com/api/v1/sites/${data.site.id}/deploys/${data.deploy.id}`,
+          {
+            headers: { Authorization: `Bearer ${netlifyConn.token}` },
+          },
+        );
 
-          deploymentStatus = (await statusResponse.json()) as any;
-
-          if (deploymentStatus.state === 'ready' || deploymentStatus.state === 'uploaded') {
-            break;
-          }
-
-          if (deploymentStatus.state === 'error') {
-            // Notify that deployment failed
-            deployArtifact.runner.handleDeployAction('deploying', 'failed', {
-              error: 'Deployment failed: ' + (deploymentStatus.error_message || 'Unknown error'),
-              source: 'netlify',
-            });
-            throw new Error('Deployment failed: ' + (deploymentStatus.error_message || 'Unknown error'));
-          }
-
-          attempts++;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error('Status check error:', error);
-          attempts++;
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!statusResponse.ok) {
+          throw new Error(`Netlify deployment status failed (${statusResponse.status}). Check your token permissions.`);
         }
+
+        deploymentStatus = (await statusResponse.json()) as any;
+
+        if (deploymentStatus.state === 'ready' || deploymentStatus.state === 'uploaded') {
+          break;
+        }
+
+        if (deploymentStatus.state === 'error') {
+          const message = 'Deployment failed: ' + (deploymentStatus.error_message || 'Unknown error');
+          deployArtifact.runner.handleDeployAction('deploying', 'failed', { error: message, source: 'netlify' });
+
+          throw new Error(message);
+        }
+
+        attempts++;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       if (attempts >= maxAttempts) {

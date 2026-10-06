@@ -9,6 +9,7 @@ import { Button } from '~/components/ui/Button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/Collapsible';
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '~/components/ui/Badge';
+import { verifyDeployProviderToken } from '~/lib/deployProviderConnect';
 
 interface ConnectionTestResult {
   status: 'success' | 'error' | 'testing';
@@ -67,26 +68,12 @@ export default function NetlifyTab() {
     });
 
     try {
-      const response = await fetch('https://api.netlify.com/api/v1/user', {
-        headers: {
-          Authorization: `Bearer ${connection.token}`,
-        },
+      const data = (await verifyDeployProviderToken('netlify', connection.token)) as NetlifyUser;
+      setConnectionTest({
+        status: 'success',
+        message: `Connected successfully as ${data.email}`,
+        timestamp: Date.now(),
       });
-
-      if (response.ok) {
-        const data = (await response.json()) as any;
-        setConnectionTest({
-          status: 'success',
-          message: `Connected successfully as ${data.email}`,
-          timestamp: Date.now(),
-        });
-      } else {
-        setConnectionTest({
-          status: 'error',
-          message: `Connection failed: ${response.status} ${response.statusText}`,
-          timestamp: Date.now(),
-        });
-      }
     } catch (error) {
       setConnectionTest({
         status: 'error',
@@ -456,34 +443,28 @@ export default function NetlifyTab() {
     setIsConnecting(true);
 
     try {
-      const response = await fetch('https://api.netlify.com/api/v1/user', {
-        headers: {
-          Authorization: `Bearer ${tokenInput}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const userData = (await response.json()) as NetlifyUser;
+      const token = tokenInput.trim();
+      const userData = (await verifyDeployProviderToken('netlify', token)) as NetlifyUser;
 
       // Update the connection store
       updateNetlifyConnection({
         user: userData,
-        token: tokenInput,
+        token,
       });
 
       toast.success('Connected to Netlify successfully');
 
       // Fetch stats after successful connection
-      fetchNetlifyStats(tokenInput);
+      void fetchNetlifyStats(token);
     } catch (error) {
       console.error('Error connecting to Netlify:', error);
-      toast.error(`Failed to connect to Netlify: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : 'Failed to connect to Netlify');
     } finally {
       setIsConnecting(false);
-      setTokenInput('');
+
+      if (netlifyConnection.get().user) {
+        setTokenInput('');
+      }
     }
   };
 
@@ -1299,11 +1280,8 @@ export default function NetlifyTab() {
               <div className="text-xs text-rayu-elements-textSecondary bg-rayu-elements-background-depth-1 dark:bg-rayu-elements-background-depth-1 p-3 rounded-lg mb-4">
                 <p className="flex items-center gap-1 mb-1">
                   <span className="i-ph:lightbulb w-3.5 h-3.5 text-rayu-elements-icon-success dark:text-rayu-elements-icon-success" />
-                  <span className="font-medium">Tip:</span> You can also set the{' '}
-                  <code className="px-1 py-0.5 bg-rayu-elements-background-depth-2 dark:bg-rayu-elements-background-depth-2 rounded">
-                    VITE_NETLIFY_ACCESS_TOKEN
-                  </code>{' '}
-                  environment variable to connect automatically.
+                  <span className="font-medium">Connect Netlify:</span> RayuCode sign-in is separate. Create a Netlify
+                  personal access token below; the token must have access to the sites you want to deploy.
                 </p>
               </div>
 

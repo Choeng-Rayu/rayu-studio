@@ -5,7 +5,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('isAllowedUrl', () => {
   it.each([
-    'https://github.com/rayucode/rayu-studio.git/info/refs?service=git-upload-pack',
+    'https://github.com/choeng-rayu/rayu-studio.git/info/refs?service=git-upload-pack',
     'https://gitlab.example.com/group/repo.git',
     'http://example.com/page',
     'https://8.8.8.8/',

@@ -32,14 +32,14 @@ theme:
   # logo: assets/logo.png
   # favicon: assets/logo.png
 repo_name: rayu-studio
-repo_url: https://github.com/rayucode/rayu-studio
+repo_url: https://github.com/choeng-rayu/rayu-studio
 edit_uri: ''
 
 extra:
   generator: false
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/rayucode/rayu-studio
+      link: https://github.com/choeng-rayu/rayu-studio
       name: RayuCode on GitHub
 
 markdown_extensions:

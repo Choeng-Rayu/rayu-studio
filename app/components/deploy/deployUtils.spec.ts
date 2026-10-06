@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { base64ToBytes, bytesToBase64, decodeTextFile, readDeployFile } from './deployUtils';
+import { addRayuCodeCredit, base64ToBytes, bytesToBase64, decodeTextFile, readDeployFile } from './deployUtils';
 
 // First bytes of a real PNG: 0x89 is not a valid UTF-8 lead byte.
 const PNG_HEADER = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
 
 describe('deploy file encoding', () => {
+  it('credits deployed HTML once without changing project source or other assets', () => {
+    const html = '<html><body><main>Hello</main></body></html>';
+    const credited = addRayuCodeCredit('/index.html', html);
+
+    expect(credited).toContain('Built by RayuCode');
+    expect(credited).toContain('data-rayucode-credit');
+    expect(addRayuCodeCredit('/index.html', credited)).toBe(credited);
+    expect(addRayuCodeCredit('/script.js', html)).toBe(html);
+    expect(addRayuCodeCredit('/fragment.html', '<main>Hello</main>')).toBe('<main>Hello</main>');
+  });
   it('keeps UTF-8 source and markup as text, including multi-byte characters and a BOM', () => {
     const html = '\uFEFF<p>© Rayu — 日本語</p>';
 

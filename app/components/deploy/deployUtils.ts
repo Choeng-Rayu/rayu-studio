@@ -1,5 +1,23 @@
 const MAX_BUILD_OUTPUT_CHARS = 4000;
 
+const RAYUCODE_CREDIT =
+  '<a data-rayucode-credit href="https://rayucode.com" target="_blank" rel="noopener noreferrer" style="position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:6px 10px;border-radius:8px;background:#161616;color:#fff;font:12px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 12px #0004">Built by RayuCode</a>';
+
+/** Credit generated static pages without modifying the user's project files. */
+export function addRayuCodeCredit(filePath: string, content: string): string {
+  if (!/\.html?$/i.test(filePath) || content.includes('data-rayucode-credit')) {
+    return content;
+  }
+
+  const closingBody = /<\/body\s*>/i;
+
+  if (!closingBody.test(content)) {
+    return content;
+  }
+
+  return content.replace(closingBody, `${RAYUCODE_CREDIT}</body>`);
+}
+
 export function formatBuildFailureOutput(output?: string) {
   const trimmed = output?.trim();
 

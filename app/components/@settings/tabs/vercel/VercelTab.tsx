@@ -10,6 +10,7 @@ import { ServiceHeader, ConnectionTestIndicator } from '~/components/@settings/s
 import { useConnectionTest } from '~/lib/hooks';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/Collapsible';
 import Cookies from 'js-cookie';
+import { verifyDeployProviderToken } from '~/lib/deployProviderConnect';
 import {
   vercelConnection,
   isConnecting,
@@ -37,6 +38,7 @@ const VercelLogo = () => (
 
 export default function VercelTab() {
   const connection = useStore(vercelConnection);
+  const [tokenInput, setTokenInput] = useState('');
   const connecting = useStore(isConnecting);
   const fetchingStats = useStore(isFetchingStats);
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(false);
@@ -211,41 +213,16 @@ export default function VercelTab() {
     isConnecting.set(true);
 
     try {
-      const token = connection.token;
+      const token = tokenInput.trim();
 
       if (!token.trim()) {
         throw new Error('Token is required');
       }
 
-      // First test the token directly with Vercel API
-      const testResponse = await fetch('https://api.vercel.com/v2/user', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'rayucode-app',
-        },
-      });
-
-      if (!testResponse.ok) {
-        if (testResponse.status === 401) {
-          throw new Error('Invalid Vercel token');
-        }
-
-        throw new Error(`Vercel API error: ${testResponse.status}`);
-      }
-
-      const userData = (await testResponse.json()) as VercelUserResponse;
+      const normalizedUser = (await verifyDeployProviderToken('vercel', token)) as VercelUserResponse['user'];
 
       // Set cookies for server-side API access
       Cookies.set('VITE_VERCEL_ACCESS_TOKEN', token, { expires: 365 });
-
-      // Normalize the user data structure
-      const normalizedUser = userData.user || {
-        id: userData.id || '',
-        username: userData.username || '',
-        email: userData.email || '',
-        name: userData.name || '',
-        avatar: userData.avatar,
-      };
 
       updateVercelConnection({
         user: normalizedUser,
@@ -253,6 +230,7 @@ export default function VercelTab() {
       });
 
       await fetchVercelStats(token);
+      setTokenInput('');
       toast.success('Successfully connected to Vercel');
     } catch (error) {
       console.error('Auth error:', error);
@@ -260,7 +238,6 @@ export default function VercelTab() {
 
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to Vercel';
       toast.error(errorMessage);
-      updateVercelConnection({ user: null, token: '' });
     } finally {
       isConnecting.set(false);
     }
@@ -738,11 +715,8 @@ export default function VercelTab() {
               <div className="text-xs text-rayu-elements-textSecondary bg-rayu-elements-background-depth-1 dark:bg-rayu-elements-background-depth-1 p-3 rounded-lg mb-4">
                 <p className="flex items-center gap-1 mb-1">
                   <span className="i-ph:lightbulb w-3.5 h-3.5 text-rayu-elements-icon-success dark:text-rayu-elements-icon-success" />
-                  <span className="font-medium">Tip:</span> You can also set the{' '}
-                  <code className="px-1 py-0.5 bg-rayu-elements-background-depth-2 dark:bg-rayu-elements-background-depth-2 rounded">
-                    VITE_VERCEL_ACCESS_TOKEN
-                  </code>{' '}
-                  environment variable to connect automatically.
+                  <span className="font-medium">Connect Vercel:</span> RayuCode sign-in is separate. Create a Vercel
+                  personal access token below; the token must have access to the account you want to deploy to.
                 </p>
               </div>
 
@@ -750,8 +724,8 @@ export default function VercelTab() {
                 <label className="block text-sm text-rayu-elements-textSecondary mb-2">Personal Access Token</label>
                 <input
                   type="password"
-                  value={connection.token}
-                  onChange={(e) => updateVercelConnection({ ...connection, token: e.target.value })}
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
                   disabled={connecting}
                   placeholder="Enter your Vercel personal access token"
                   className={classNames(
@@ -778,7 +752,7 @@ export default function VercelTab() {
 
               <button
                 onClick={handleConnect}
-                disabled={connecting || !connection.token}
+                disabled={connecting || !tokenInput.trim()}
                 className={classNames(
                   'px-4 py-2 rounded-lg text-sm flex items-center gap-2',
                   'bg-[#303030] text-white',
