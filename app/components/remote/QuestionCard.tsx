@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { classNames } from '~/utils/classNames';
 import { answerQuestions, pendingQuestion } from '~/lib/webBridge/webBridgeStore';
+import type { QuestionRequest } from '~/lib/webBridge/webBridgeTypes';
+import { useArmed } from './useArmed';
 
 /**
  * The agent's `AskUserQuestion` interview.
@@ -18,19 +20,22 @@ import { answerQuestions, pendingQuestion } from '~/lib/webBridge/webBridgeStore
  */
 export function QuestionCard(): React.JSX.Element | null {
   const pending = useStore(pendingQuestion);
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
 
-  /*
-   * Keyed on callId so switching to a different interview resets the form. Without this
-   * a stale selection could be submitted against a question it was never shown for.
-   */
-  const formKey = pending?.callId ?? '';
-  const questions = useMemo(() => pending?.questions ?? [], [pending]);
-
-  if (!pending || questions.length === 0) {
+  if (!pending || pending.questions.length === 0) {
     return null;
   }
+
+  /*
+   * Keyed on callId so a different interview starts from a clean form. Without this a
+   * stale selection could be submitted against a question it was never shown for.
+   */
+  return <QuestionForm key={pending.callId} pending={pending} />;
+}
+
+function QuestionForm({ pending }: { pending: QuestionRequest }): React.JSX.Element {
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const { questions } = pending;
 
   const toggle = (question: string, label: string, multiSelect: boolean): void => {
     setSelected((prev) => {
@@ -74,20 +79,18 @@ export function QuestionCard(): React.JSX.Element | null {
   }
 
   const complete = questions.every((q) => Boolean(answers[q.question]));
+  const armed = useArmed();
 
   const submit = () => {
-    if (!complete) {
+    if (!complete || !armed) {
       return;
     }
 
-    answerQuestions(answers);
-    setSelected({});
-    setCustom({});
+    answerQuestions(pending.callId, answers);
   };
 
   return (
     <section
-      key={formKey}
       role="alertdialog"
       aria-labelledby="question-title"
       className="rounded-lg border border-purple-500/40 bg-purple-500/5 p-4"
@@ -179,7 +182,7 @@ export function QuestionCard(): React.JSX.Element | null {
         <button
           type="button"
           onClick={submit}
-          disabled={!complete}
+          disabled={!complete || !armed}
           className="min-h-[36px] px-4 rounded-md text-sm font-medium bg-rayu-elements-button-primary-background text-rayu-elements-button-primary-text hover:bg-rayu-elements-button-primary-backgroundHover disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
           Send {questions.length > 1 ? 'answers' : 'answer'}

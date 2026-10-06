@@ -1,17 +1,26 @@
 import { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { pendingPlanRequest, respondToPlan } from '~/lib/webBridge/webBridgeStore';
+import type { PlanRequest } from '~/lib/webBridge/webBridgeTypes';
+import { useArmed } from './useArmed';
 
 /**
  * Plan-mode approval.
  *
- * THREE decisions, matching rayu-cli's own plan card exactly
- * (src/telegram/telegramPlanApproval.ts) rather than the two an approve/reject boolean
- * would allow:
+ * THREE decisions, the same three the Telegram bridge's plan card offers
+ * (rayu-cli src/telegram/telegramPlanApproval.ts) rather than the two an
+ * approve/reject boolean would allow:
  *
- *  • Approve                       -> allow
+ *  • Approve                       -> allow, no mode change
  *  • Approve and auto-accept edits -> allow + setMode acceptEdits (session-wide)
  *  • Keep planning, with feedback  -> deny + message
+ *
+ * EACH BUTTON SAYS WHAT IT LEADS TO, because the answer is not what the names alone
+ * suggest. With no mode change, rayu-cli's ExitPlanMode tool applies the product rule
+ * that a confirmed plan enters Orchestrator mode (rayu-cli AGENTS_ORCHESTRATOR.md),
+ * where tools run without asking — broader than auto-accept edits, where commands still
+ * ask. Both outcomes are pinned by rayu-cli test/webBridgePlanApprovalMode.test.ts; if
+ * that test changes, this copy must change with it.
  *
  * The third one is the reason this card is not just a permission card. Rejecting a plan
  * with no explanation sends the model back to replan blind, and it will frequently
@@ -19,17 +28,24 @@ import { pendingPlanRequest, respondToPlan } from '~/lib/webBridge/webBridgeStor
  */
 export function PlanApprovalCard(): React.JSX.Element | null {
   const pending = useStore(pendingPlanRequest);
-  const [feedback, setFeedback] = useState('');
-  const [showFeedback, setShowFeedback] = useState(false);
 
   if (!pending) {
     return null;
   }
 
+  // Keyed by callId: notes typed for one plan must never be sent with the next.
+  return <PlanApprovalForm key={pending.callId} pending={pending} />;
+}
+
+function PlanApprovalForm({ pending }: { pending: PlanRequest }): React.JSX.Element {
+  const [feedback, setFeedback] = useState('');
+  const [showFeedback, setShowFeedback] = useState(false);
+  const armed = useArmed();
+
   const keepPlanning = () => {
-    respondToPlan(false, { message: feedback.trim() || undefined });
-    setFeedback('');
-    setShowFeedback(false);
+    if (armed) {
+      respondToPlan(pending.callId, false, { message: feedback.trim() || undefined });
+    }
   };
 
   return (
@@ -46,7 +62,7 @@ export function PlanApprovalCard(): React.JSX.Element | null {
             Review the plan
           </h3>
           <p className="mt-0.5 text-xs text-rayu-elements-textSecondary">
-            Approve to let the agent start, or send it back with notes.
+            Choose how the agent carries it out, or send it back with notes.
           </p>
         </div>
       </div>
@@ -87,13 +103,19 @@ export function PlanApprovalCard(): React.JSX.Element | null {
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
+      <div className="mt-3 flex items-stretch gap-2 flex-wrap">
+        {/*
+         * The outcome is printed on each button, not left to a tooltip: tooltips are
+         * unreachable on touch, and this is the decision a phone user is making.
+         */}
         <button
           type="button"
-          onClick={() => respondToPlan(true)}
-          className="min-h-[36px] px-4 rounded-md text-sm font-medium bg-rayu-elements-button-primary-background text-rayu-elements-button-primary-text hover:bg-rayu-elements-button-primary-backgroundHover focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
+          disabled={!armed}
+          onClick={() => respondToPlan(pending.callId, true)}
+          className="min-h-[36px] px-4 py-1.5 rounded-md text-sm font-medium text-left bg-rayu-elements-button-primary-background text-rayu-elements-button-primary-text hover:bg-rayu-elements-button-primary-backgroundHover disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
-          Approve
+          <span className="block">Approve · Orchestrator</span>
+          <span className="block text-[11px] font-normal opacity-80">Tools then run without asking</span>
         </button>
         {/*
          * A SEPARATE button, never a checkbox on Approve. This changes the permission
@@ -102,16 +124,20 @@ export function PlanApprovalCard(): React.JSX.Element | null {
          */}
         <button
           type="button"
-          onClick={() => respondToPlan(true, { acceptEdits: true })}
-          title="Approve, and stop asking before each file edit for the rest of this session"
-          className="min-h-[36px] px-4 rounded-md text-sm font-medium border border-rayu-elements-borderColorActive text-rayu-elements-textPrimary hover:bg-rayu-elements-background-depth-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
+          disabled={!armed}
+          onClick={() => respondToPlan(pending.callId, true, { acceptEdits: true })}
+          className="min-h-[36px] px-4 py-1.5 rounded-md text-sm font-medium text-left border border-rayu-elements-borderColorActive text-rayu-elements-textPrimary hover:bg-rayu-elements-background-depth-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
-          Approve + auto-accept edits
+          <span className="block">Approve · auto-accept edits</span>
+          <span className="block text-[11px] font-normal text-rayu-elements-textTertiary">
+            Edits stop asking; commands still ask
+          </span>
         </button>
         <button
           type="button"
+          disabled={!armed}
           onClick={() => (showFeedback ? keepPlanning() : setShowFeedback(true))}
-          className="min-h-[36px] px-4 rounded-md text-sm font-medium border border-rayu-elements-borderColor text-rayu-elements-textSecondary hover:bg-rayu-elements-background-depth-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
+          className="min-h-[36px] px-4 rounded-md text-sm font-medium border border-rayu-elements-borderColor text-rayu-elements-textSecondary hover:bg-rayu-elements-background-depth-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
           {showFeedback ? 'Send notes' : 'Keep planning…'}
         </button>

@@ -1,8 +1,9 @@
-import { atom } from 'nanostores';
+import { atom, computed, type ReadableAtom, type WritableAtom } from 'nanostores';
 import { toast } from 'react-toastify';
 import { webBridgeClient } from './webBridgeClient';
 import {
   BRIDGE_EVENT,
+  canAcceptPrompt,
   type ActivityEvent,
   type BridgeConnectionState,
   type BufferedMessage,
@@ -48,9 +49,59 @@ export const streamingThinking = atom<string>('');
 /** True between the first delta and `stream_end`. Gates the interrupt button. */
 export const isStreaming = atom<boolean>(false);
 
-export const pendingToolCall = atom<ToolCallRequest | null>(null);
-export const pendingPlanRequest = atom<PlanRequest | null>(null);
-export const pendingQuestion = atom<QuestionRequest | null>(null);
+/**
+ * Approvals waiting on an answer, oldest-first, for EVERY session of this user.
+ *
+ * Queues, not slots. The agent can ask about several tools at once — parallel tool
+ * calls each raise their own request — and with one slot each request overwrote the
+ * last, leaving the earlier one unanswerable from here while the machine stayed
+ * blocked on it.
+ *
+ * Kept per session and shown only for the attached one: switching machines must not
+ * present one machine's approval inside another machine's conversation, and must not
+ * lose it either — the backend does not replay pending approvals on re-attach.
+ */
+export const toolCallQueue = atom<ToolCallRequest[]>([]);
+export const planRequestQueue = atom<PlanRequest[]>([]);
+export const questionQueue = atom<QuestionRequest[]>([]);
+
+/** The attached session's oldest request in a queue — the one its card shows. */
+function oldestForAttached<T extends { sessionId: string }>(queue: ReadableAtom<T[]>): ReadableAtom<T | null> {
+  return computed(
+    [queue, attachedSessionId],
+    (items, sessionId) => items.find((i) => i.sessionId === sessionId) ?? null,
+  );
+}
+
+export const pendingToolCall = oldestForAttached(toolCallQueue);
+export const pendingPlanRequest = oldestForAttached(planRequestQueue);
+export const pendingQuestion = oldestForAttached(questionQueue);
+
+/** How many tool approvals the attached session is waiting on, including the one shown. */
+export const toolCallsWaiting = computed(
+  [toolCallQueue, attachedSessionId],
+  (items, sessionId) => items.filter((i) => i.sessionId === sessionId).length,
+);
+
+/**
+ * Approvals of every kind waiting per session, for the machine list.
+ *
+ * Approvals for sessions that are not attached are kept rather than dropped, and this is
+ * what makes them discoverable: a machine blocked on a decision says so in the picker
+ * instead of only when someone happens to select it.
+ */
+export const approvalsWaitingBySession = computed(
+  [toolCallQueue, planRequestQueue, questionQueue],
+  (tools, plans, questions) => {
+    const counts: Record<string, number> = {};
+
+    for (const request of [...tools, ...plans, ...questions]) {
+      counts[request.sessionId] = (counts[request.sessionId] ?? 0) + 1;
+    }
+
+    return counts;
+  },
+);
 
 export const connectionState = atom<BridgeConnectionState>('idle');
 
@@ -106,6 +157,12 @@ export function stopWebBridge(): void {
   bound = false;
   webBridgeClient.disconnect();
   connectionState.set('idle');
+
+  /*
+   * Leaving the page means missing the cancel events that would dismiss these, so on
+   * return they could offer Allow/Deny for decisions nobody is waiting on.
+   */
+  keepApprovals(() => false);
 }
 
 function bindLifecycle(): void {
@@ -152,6 +209,13 @@ function bindHandlers(): void {
        * that is what makes a second tab's switch show up here.
        */
       attachedSessionId.set(attached?.id ?? null);
+
+      /*
+       * A machine that went offline took its pending approvals with it — the backend
+       * drops them with the socket — so their cards could no longer be answered.
+       */
+      const reachable = new Set(sessions.filter(canAcceptPrompt).map((s) => s.id));
+      keepApprovals((request) => reachable.has(request.sessionId));
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.SESSION_ATTACHED, (payload) => {
@@ -214,6 +278,13 @@ function bindHandlers(): void {
     webBridgeClient.on(BRIDGE_EVENT.INTERRUPT_ACK, (payload) => {
       const { sessionId } = (payload ?? {}) as { sessionId?: string };
 
+      if (!sessionId) {
+        return;
+      }
+
+      // A stopped turn's approvals are no longer answerable, whichever session is shown.
+      keepApprovals((request) => request.sessionId !== sessionId);
+
       if (!isForAttachedSession(sessionId)) {
         return;
       }
@@ -224,42 +295,37 @@ function bindHandlers(): void {
        * when the signal never landed.
        */
       commitTurn();
-
-      // A cancelled approval is no longer answerable.
-      pendingToolCall.set(null);
-      pendingPlanRequest.set(null);
-      pendingQuestion.set(null);
       toast.info('Turn interrupted');
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.TOOL_CALL, (payload) => {
       const event = payload as ToolCallRequest;
 
-      if (!isForAttachedSession(event?.sessionId) || !event.callId) {
+      if (!event?.sessionId || !event.callId) {
         return;
       }
 
-      pendingToolCall.set(event);
+      enqueue(toolCallQueue, event);
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.PLAN_REQUEST, (payload) => {
       const event = payload as PlanRequest;
 
-      if (!isForAttachedSession(event?.sessionId) || !event.callId) {
+      if (!event?.sessionId || !event.callId) {
         return;
       }
 
-      pendingPlanRequest.set(event);
+      enqueue(planRequestQueue, event);
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.QUESTION_REQUEST, (payload) => {
       const event = payload as QuestionRequest;
 
-      if (!isForAttachedSession(event?.sessionId) || !event.callId) {
+      if (!event?.sessionId || !event.callId) {
         return;
       }
 
-      pendingQuestion.set({ ...event, questions: event.questions ?? [] });
+      enqueue(questionQueue, { ...event, questions: event.questions ?? [] });
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.CANCEL_REQUEST, (payload) => {
@@ -270,21 +336,11 @@ function bindHandlers(): void {
       }
 
       /*
-       * Dismiss whichever card is showing this callId. Matched by id rather than
+       * Dismiss exactly the card for this callId. Matched by id rather than
        * blanket-cleared: cancelling one approval must not silently drop a different one
        * the user is mid-way through answering.
        */
-      if (pendingToolCall.get()?.callId === callId) {
-        pendingToolCall.set(null);
-      }
-
-      if (pendingPlanRequest.get()?.callId === callId) {
-        pendingPlanRequest.set(null);
-      }
-
-      if (pendingQuestion.get()?.callId === callId) {
-        pendingQuestion.set(null);
-      }
+      keepApprovals((request) => request.callId !== callId);
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.ACTIVITY, (payload) => {
@@ -368,18 +424,24 @@ export function sendPrompt(text: string, attachments?: string[]): void {
 /**
  * Answer a tool approval.
  *
+ * Addressed by the callId the card SHOWED, never "whatever is pending now": a click
+ * landing after its card was retired must not answer the request that replaced it.
+ *
  * `message` is the reason for a denial and reaches the model. `remember` becomes an
  * allow-rule scoped server-side to the tool the CLI asked about.
  */
-export function respondToTool(decision: ToolDecision, options: { remember?: boolean; message?: string } = {}): void {
-  const pending = pendingToolCall.get();
+export function respondToTool(
+  callId: string,
+  decision: ToolDecision,
+  options: { remember?: boolean; message?: string } = {},
+): void {
+  const pending = toolCallQueue.get().find((request) => request.callId === callId);
 
   if (!pending) {
     return;
   }
 
-  pendingToolCall.set(null);
-  webBridgeClient.toolDecision(pending.callId, decision, {
+  const sent = webBridgeClient.toolDecision(pending.callId, decision, {
     remember: options.remember,
     message: options.message,
 
@@ -390,40 +452,48 @@ export function respondToTool(decision: ToolDecision, options: { remember?: bool
      */
     updatedPermissions: options.remember && decision === 'allow' ? pending.permissionSuggestions : undefined,
   });
+
+  settleApproval(pending.callId, sent);
 }
 
 /**
- * Answer a plan approval.
+ * Answer a plan approval, addressed by the callId the card showed.
  *
  * Three outcomes, matching rayu-cli's own card: approve, approve and auto-accept edits
  * for the rest of the session, or send the model back to planning with feedback.
  */
-export function respondToPlan(approved: boolean, options: { acceptEdits?: boolean; message?: string } = {}): void {
-  const pending = pendingPlanRequest.get();
+export function respondToPlan(
+  callId: string,
+  approved: boolean,
+  options: { acceptEdits?: boolean; message?: string } = {},
+): void {
+  const pending = planRequestQueue.get().find((request) => request.callId === callId);
 
   if (!pending) {
     return;
   }
 
-  pendingPlanRequest.set(null);
-  webBridgeClient.planDecision(pending.callId, approved, options);
+  settleApproval(pending.callId, webBridgeClient.planDecision(pending.callId, approved, options));
 }
 
 /**
- * Submit an interview's answers.
+ * Submit an interview's answers, addressed by the callId the card showed.
  *
  * Keyed by question text, which is the key the tool reads. Multi-select answers arrive
  * already joined by the card.
  */
-export function answerQuestions(answers: Record<string, string>, annotations?: Record<string, string>): void {
-  const pending = pendingQuestion.get();
+export function answerQuestions(
+  callId: string,
+  answers: Record<string, string>,
+  annotations?: Record<string, string>,
+): void {
+  const pending = questionQueue.get().find((request) => request.callId === callId);
 
   if (!pending) {
     return;
   }
 
-  pendingQuestion.set(null);
-  webBridgeClient.questionAnswer(pending.callId, answers, annotations);
+  settleApproval(pending.callId, webBridgeClient.questionAnswer(pending.callId, answers, annotations));
 }
 
 export function interrupt(): void {
@@ -440,6 +510,40 @@ export function interrupt(): void {
 
 function isForAttachedSession(sessionId: string | undefined): boolean {
   return Boolean(sessionId) && sessionId === attachedSessionId.get();
+}
+
+/** Append — or, for a re-sent callId, replace in place so the queue stays oldest-first. */
+function enqueue<T extends { callId: string }>(queue: WritableAtom<T[]>, request: T): void {
+  const items = queue.get();
+  const index = items.findIndex((existing) => existing.callId === request.callId);
+
+  queue.set(index < 0 ? [...items, request] : items.map((existing, i) => (i === index ? request : existing)));
+}
+
+type ApprovalRequest = Pick<ToolCallRequest, 'sessionId' | 'callId'>;
+
+/** Keep only the approvals — of every kind — that `keep` accepts. */
+function keepApprovals(keep: (request: ApprovalRequest) => boolean): void {
+  toolCallQueue.set(toolCallQueue.get().filter(keep));
+  planRequestQueue.set(planRequestQueue.get().filter(keep));
+  questionQueue.set(questionQueue.get().filter(keep));
+}
+
+/**
+ * Retire a card once its answer is on the wire — and only then.
+ *
+ * An answer typed while the socket is down is not queued (see webBridgeClient), so the
+ * card stays up and says why: a card that vanishes as if answered, while the machine is
+ * still blocked on it, would be remote control lying about the far end.
+ */
+function settleApproval(callId: string, sent: boolean): void {
+  if (!sent) {
+    bridgeError.set('Not connected to the bridge — your answer was not sent.');
+    return;
+  }
+
+  bridgeError.set(null);
+  keepApprovals((request) => request.callId !== callId);
 }
 
 /**

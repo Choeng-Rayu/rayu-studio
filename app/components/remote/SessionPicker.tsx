@@ -1,6 +1,12 @@
 import { useStore } from '@nanostores/react';
 import { classNames } from '~/utils/classNames';
-import { attachSession, attachedSessionId, connectedSessions, connectionState } from '~/lib/webBridge/webBridgeStore';
+import {
+  approvalsWaitingBySession,
+  attachSession,
+  attachedSessionId,
+  connectedSessions,
+  connectionState,
+} from '~/lib/webBridge/webBridgeStore';
 import { sessionTitle, shortenCwd, type WebBridgeSession } from '~/lib/webBridge/webBridgeTypes';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
@@ -46,9 +52,12 @@ interface SessionRowProps {
   session: WebBridgeSession;
   selected: boolean;
   onSelect: (id: string) => void;
+
+  /** Approvals this session is blocked on. */
+  waiting: number;
 }
 
-function SessionRow({ session, selected, onSelect }: SessionRowProps): React.JSX.Element {
+function SessionRow({ session, selected, onSelect, waiting }: SessionRowProps): React.JSX.Element {
   return (
     <li>
       <button
@@ -76,6 +85,16 @@ function SessionRow({ session, selected, onSelect }: SessionRowProps): React.JSX
         <div className="mt-0.5 text-[11px] text-rayu-elements-textTertiary">
           {session.status === 'offline' ? `Last seen ${relativeTime(session.lastSeenAt)}` : session.hostname}
         </div>
+        {/*
+         * The agent on this machine is blocked until someone answers. Shown here because
+         * its cards only render once the session is selected.
+         */}
+        {waiting > 0 && (
+          <div className="mt-1 flex items-center gap-1 text-[11px] font-medium text-yellow-600 dark:text-yellow-400">
+            <span aria-hidden="true" className="i-ph:shield-warning-duotone" />
+            {waiting === 1 ? 'Waiting for your approval' : `${waiting} approvals waiting`}
+          </div>
+        )}
       </button>
     </li>
   );
@@ -85,6 +104,7 @@ export function SessionPicker(): React.JSX.Element {
   const sessions = useStore(connectedSessions);
   const attachedId = useStore(attachedSessionId);
   const state = useStore(connectionState);
+  const waitingBySession = useStore(approvalsWaitingBySession);
 
   return (
     <aside
@@ -116,6 +136,7 @@ export function SessionPicker(): React.JSX.Element {
               session={session}
               selected={session.id === attachedId}
               onSelect={attachSession}
+              waiting={waitingBySession[session.id] ?? 0}
             />
           ))}
         </ul>

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { classNames } from '~/utils/classNames';
-import { pendingToolCall, respondToTool } from '~/lib/webBridge/webBridgeStore';
+import { pendingToolCall, respondToTool, toolCallsWaiting } from '~/lib/webBridge/webBridgeStore';
+import type { ToolCallRequest } from '~/lib/webBridge/webBridgeTypes';
+import { useArmed } from './useArmed';
 
 /**
  * The permission gate, rendered in the browser.
@@ -40,15 +42,41 @@ function formatInput(input: unknown): string {
 
 export function ToolApprovalCard(): React.JSX.Element | null {
   const pending = useStore(pendingToolCall);
-  const [remember, setRemember] = useState(false);
-  const [reason, setReason] = useState('');
-  const [showReason, setShowReason] = useState(false);
+  const waiting = useStore(toolCallsWaiting);
 
   if (!pending) {
     return null;
   }
 
+  /*
+   * Keyed by callId so every request starts from a clean form. Without the key the
+   * form's state outlived the request it belonged to: a ticked "Don't ask again" was
+   * still ticked for the NEXT tool, turning a one-off approval into a durable grant
+   * nobody chose.
+   */
+  return <ToolApprovalForm key={pending.callId} pending={pending} waiting={waiting} />;
+}
+
+function ToolApprovalForm({ pending, waiting }: { pending: ToolCallRequest; waiting: number }): React.JSX.Element {
+  const [remember, setRemember] = useState(false);
+  const [reason, setReason] = useState('');
+  const [showReason, setShowReason] = useState(false);
+  const armed = useArmed();
+
   const preview = formatInput(pending.toolInput);
+
+  /** Answer THIS card's request; ignored until the card has been on screen briefly. */
+  const answer = (decision: 'allow' | 'deny') => {
+    if (!armed) {
+      return;
+    }
+
+    respondToTool(
+      pending.callId,
+      decision,
+      decision === 'allow' ? { remember } : { message: reason.trim() || undefined },
+    );
+  };
 
   return (
     <section
@@ -72,6 +100,8 @@ export function ToolApprovalCard(): React.JSX.Element | null {
           )}
           <p className="mt-0.5 text-xs text-rayu-elements-textSecondary">
             The agent is waiting on this machine until you answer.
+            {waiting > 1 &&
+              ` ${waiting - 1} more ${waiting === 2 ? 'request is' : 'requests are'} queued after this one.`}
           </p>
         </div>
       </div>
@@ -137,7 +167,7 @@ export function ToolApprovalCard(): React.JSX.Element | null {
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                respondToTool('deny', { message: reason.trim() || undefined });
+                answer('deny');
               }
             }}
             placeholder="Tell the agent what to do instead…"
@@ -149,15 +179,17 @@ export function ToolApprovalCard(): React.JSX.Element | null {
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          onClick={() => respondToTool('allow', { remember })}
-          className="min-h-[36px] px-4 rounded-md text-sm font-medium bg-rayu-elements-button-primary-background text-rayu-elements-button-primary-text hover:bg-rayu-elements-button-primary-backgroundHover focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
+          disabled={!armed}
+          onClick={() => answer('allow')}
+          className="min-h-[36px] px-4 rounded-md text-sm font-medium bg-rayu-elements-button-primary-background text-rayu-elements-button-primary-text hover:bg-rayu-elements-button-primary-backgroundHover disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
           Allow
         </button>
         <button
           type="button"
-          onClick={() => respondToTool('deny', { message: reason.trim() || undefined })}
-          className="min-h-[36px] px-4 rounded-md text-sm font-medium border border-rayu-elements-borderColor text-rayu-elements-textSecondary hover:bg-rayu-elements-background-depth-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
+          disabled={!armed}
+          onClick={() => answer('deny')}
+          className="min-h-[36px] px-4 rounded-md text-sm font-medium border border-rayu-elements-borderColor text-rayu-elements-textSecondary hover:bg-rayu-elements-background-depth-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rayu-elements-borderColorActive"
         >
           Deny
         </button>

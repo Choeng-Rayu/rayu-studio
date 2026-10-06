@@ -2,6 +2,7 @@ import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { memo, useMemo, useState, useEffect } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import { classNames } from '~/utils/classNames';
 import {
   TOOL_EXECUTION_APPROVAL,
@@ -18,6 +19,7 @@ import type { ToolCallAnnotation } from '~/types/context';
 const highlighterOptions = {
   langs: ['json'],
   themes: ['light-plus', 'dark-plus'],
+  engine: createJavaScriptRegexEngine(),
 };
 
 const jsonHighlighter: HighlighterGeneric<BundledLanguage, BundledTheme> =
