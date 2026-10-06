@@ -2,24 +2,20 @@ import { atom, map, type MapStore, type ReadableAtom, type WritableAtom } from '
 import type { EditorDocument, ScrollPosition } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { ActionRunner } from '~/lib/runtime/action-runner';
 import type { ActionCallbackData, ArtifactCallbackData } from '~/lib/runtime/message-parser';
-import { webcontainer } from '~/lib/webcontainer';
+import { startWebContainer, webcontainer } from '~/lib/webcontainer';
 import type { ITerminal } from '~/types/terminal';
 import { unreachable } from '~/utils/unreachable';
 import { EditorStore } from './editor';
 import { FilesStore, type FileMap } from './files';
 import { PreviewsStore } from './previews';
 import { TerminalStore } from './terminal';
-import JSZip from 'jszip';
-import fileSaver from 'file-saver';
-import { Octokit, type RestEndpointMethodTypes } from '@octokit/rest';
+import type { RestEndpointMethodTypes } from '@octokit/rest';
 import { path } from '~/utils/path';
 import { extractRelativePath } from '~/utils/diff';
 import { description } from '~/lib/persistence';
 import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
-
-const { saveAs } = fileSaver;
 
 export interface ArtifactState {
   id: string;
@@ -472,6 +468,12 @@ export class WorkbenchStore {
       return;
     }
 
+    /*
+     * Parsing an artifact is the first point at which the browser-side runtime
+     * is needed. The runner still awaits the shared promise before any action.
+     */
+    void startWebContainer().catch((error) => console.error('Could not start workspace runtime:', error));
+
     if (!this.artifactIdList.includes(id)) {
       this.artifactIdList.push(id);
     }
@@ -610,7 +612,11 @@ export class WorkbenchStore {
   }
 
   async downloadZip() {
-    const zip = new JSZip();
+    const [{ default: zipConstructor }, { default: fileSaver }] = await Promise.all([
+      import('jszip'),
+      import('file-saver'),
+    ]);
+    const zip = new zipConstructor();
     const files = this.files.get();
 
     // Get the project name from the description input, or use a default name
@@ -644,7 +650,7 @@ export class WorkbenchStore {
 
     // Generate the zip file and save it
     const content = await zip.generateAsync({ type: 'blob' });
-    saveAs(content, `${uniqueProjectName}.zip`);
+    fileSaver.saveAs(content, `${uniqueProjectName}.zip`);
   }
 
   async syncFiles(targetHandle: FileSystemDirectoryHandle) {
@@ -706,7 +712,8 @@ export class WorkbenchStore {
 
       if (isGitHub) {
         // Initialize Octokit with the auth token
-        const octokit = new Octokit({ auth: authToken });
+        const { Octokit: octokitConstructor } = await import('@octokit/rest');
+        const octokit = new octokitConstructor({ auth: authToken });
 
         // Check if the repository already exists before creating it
         let repo: RestEndpointMethodTypes['repos']['get']['response']['data'];

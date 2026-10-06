@@ -15,6 +15,7 @@ import {
 import { IconButton } from '~/components/ui/IconButton';
 import { Slider, type SliderOptions } from '~/components/ui/Slider';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
+import { startWebContainer } from '~/lib/webcontainer';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
@@ -296,6 +297,7 @@ export const Workbench = memo(
 
     const hasPreview = useStore(computed(workbenchStore.previews, (previews) => previews.length > 0));
     const showWorkbench = useStore(workbenchStore.showWorkbench);
+    const [hasOpened, setHasOpened] = useState(showWorkbench);
     const selectedFile = useStore(workbenchStore.selectedFile);
     const currentDocument = useStore(workbenchStore.currentDocument);
     const unsavedFiles = useStore(workbenchStore.unsavedFiles);
@@ -318,6 +320,13 @@ export const Workbench = memo(
         setSelectedView('preview');
       }
     }, [hasPreview]);
+
+    useEffect(() => {
+      if (showWorkbench) {
+        setHasOpened(true);
+        void startWebContainer().catch(() => toast.error('Could not start the workspace runtime'));
+      }
+    }, [showWorkbench]);
 
     useEffect(() => {
       workbenchStore.setDocuments(files);
@@ -373,7 +382,8 @@ export const Workbench = memo(
     }, []);
 
     return (
-      chatStarted && (
+      chatStarted &&
+      hasOpened && (
         <motion.div
           initial="closed"
           animate={showWorkbench ? 'open' : 'closed'}
@@ -499,10 +509,14 @@ export const Workbench = memo(
                     initial={{ x: '100%' }}
                     animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
                   >
-                    <DiffView fileHistory={fileHistory} setFileHistory={setFileHistory} />
+                    {selectedView === 'diff' ? (
+                      <DiffView fileHistory={fileHistory} setFileHistory={setFileHistory} />
+                    ) : (
+                      <></>
+                    )}
                   </View>
                   <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
-                    <Preview setSelectedElement={setSelectedElement} />
+                    {selectedView === 'preview' ? <Preview setSelectedElement={setSelectedElement} /> : <></>}
                   </View>
                 </div>
               </div>

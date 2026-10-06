@@ -1,5 +1,5 @@
-import { WebContainer } from '@webcontainer/api';
-import { WORK_DIR_NAME } from '~/utils/constants';
+import type { WebContainer } from '@webcontainer/api';
+import { WORK_DIR_NAME } from '~/utils/workspaceConstants';
 import { cleanStackTrace } from '~/utils/stacktrace';
 
 interface WebContainerContext {
@@ -14,52 +14,71 @@ if (import.meta.hot) {
   import.meta.hot.data.webcontainerContext = webcontainerContext;
 }
 
-export let webcontainer: Promise<WebContainer> = new Promise(() => {
-  // noop for ssr
-});
+interface WebContainerState {
+  promise: Promise<WebContainer>;
+  resolve: (container: WebContainer) => void;
+  reject: (error: unknown) => void;
+  started: boolean;
+}
 
-if (!import.meta.env.SSR) {
-  webcontainer =
-    import.meta.hot?.data.webcontainer ??
-    Promise.resolve()
-      .then(() => {
-        return WebContainer.boot({
-          coep: 'credentialless',
-          workdirName: WORK_DIR_NAME,
-          forwardPreviewErrors: true, // Enable error forwarding from iframes
-        });
-      })
-      .then(async (webcontainer) => {
-        webcontainerContext.loaded = true;
+function createState(): WebContainerState {
+  let resolve!: (container: WebContainer) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<WebContainer>((onReady, onError) => {
+    resolve = onReady;
+    reject = onError;
+  });
 
-        const { workbenchStore } = await import('~/lib/stores/workbench');
+  return { promise, resolve, reject, started: false };
+}
 
-        const response = await fetch('/inspector-script.js');
-        const inspectorScript = await response.text();
-        await webcontainer.setPreviewScript(inspectorScript);
+const state: WebContainerState = import.meta.hot?.data.webcontainerState ?? createState();
 
-        // Listen for preview errors
-        webcontainer.on('preview-message', (message) => {
-          console.log('WebContainer preview message:', message);
+if (import.meta.hot) {
+  import.meta.hot.data.webcontainerState = state;
+}
 
-          // Handle both uncaught exceptions and unhandled promise rejections
-          if (message.type === 'PREVIEW_UNCAUGHT_EXCEPTION' || message.type === 'PREVIEW_UNHANDLED_REJECTION') {
-            const isPromise = message.type === 'PREVIEW_UNHANDLED_REJECTION';
-            const title = isPromise ? 'Unhandled Promise Rejection' : 'Uncaught Exception';
-            workbenchStore.actionAlert.set({
-              type: 'preview',
-              title,
-              description: 'message' in message ? message.message : 'Unknown error',
-              content: `Error occurred at ${message.pathname}${message.search}${message.hash}\nPort: ${message.port}\n\nStack trace:\n${cleanStackTrace(message.stack || '')}`,
-              source: 'preview',
-            });
-          }
-        });
+/** Existing consumers can await this promise without starting a browser-side Node runtime. */
+export const webcontainer = state.promise;
 
-        return webcontainer;
+/** Boot only when an artifact, terminal, Git import, or restored project needs it. */
+export function startWebContainer(): Promise<WebContainer> {
+  if (import.meta.env.SSR || state.started) {
+    return state.promise;
+  }
+
+  state.started = true;
+  void import('@webcontainer/api')
+    .then((module) =>
+      module.WebContainer.boot({
+        coep: 'credentialless',
+        workdirName: WORK_DIR_NAME,
+        forwardPreviewErrors: true,
+      }),
+    )
+    .then(async (container) => {
+      webcontainerContext.loaded = true;
+
+      const { workbenchStore } = await import('~/lib/stores/workbench');
+      const response = await fetch('/inspector-script.js');
+      await container.setPreviewScript(await response.text());
+
+      container.on('preview-message', (message) => {
+        if (message.type === 'PREVIEW_UNCAUGHT_EXCEPTION' || message.type === 'PREVIEW_UNHANDLED_REJECTION') {
+          const isPromise = message.type === 'PREVIEW_UNHANDLED_REJECTION';
+          workbenchStore.actionAlert.set({
+            type: 'preview',
+            title: isPromise ? 'Unhandled Promise Rejection' : 'Uncaught Exception',
+            description: 'message' in message ? message.message : 'Unknown error',
+            content: `Error occurred at ${message.pathname}${message.search}${message.hash}\nPort: ${message.port}\n\nStack trace:\n${cleanStackTrace(message.stack || '')}`,
+            source: 'preview',
+          });
+        }
       });
 
-  if (import.meta.hot) {
-    import.meta.hot.data.webcontainer = webcontainer;
-  }
+      state.resolve(container);
+    })
+    .catch(state.reject);
+
+  return state.promise;
 }

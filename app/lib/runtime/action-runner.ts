@@ -186,7 +186,12 @@ export class ActionRunner {
           break;
         }
         case 'start': {
-          // making the start app non blocking
+          // Dependency installation must finish before later actions can use the shell.
+          const shell = this.#shellTerminal();
+          await shell.ready();
+          await this.#installMissingStartDependencies(action.content, shell, action);
+
+          // Keep the long-running dev server itself non-blocking.
 
           this.#runStartAction(action)
             .then(() => this.#updateAction(actionId, { status: 'complete' }))
@@ -306,6 +311,57 @@ export class ActionRunner {
     }
 
     return resp;
+  }
+
+  async #installMissingStartDependencies(command: string, shell: RayuShell, action: ActionState) {
+    const npmScript = command.trim().match(/^npm\s+run\s+([\w:-]+)$/)?.[1];
+
+    if (!npmScript) {
+      return;
+    }
+
+    const container = await this.#webcontainer;
+    let packageJson: { scripts?: Record<string, string> };
+
+    try {
+      packageJson = JSON.parse(await container.fs.readFile('package.json', 'utf-8'));
+    } catch {
+      return;
+    }
+
+    if (!packageJson.scripts?.[npmScript]) {
+      return;
+    }
+
+    let needsInstall = false;
+
+    try {
+      await container.fs.readdir('node_modules');
+    } catch {
+      needsInstall = true;
+    }
+
+    if (!needsInstall && /^vite(?:\s|$)/.test(packageJson.scripts[npmScript].trim())) {
+      try {
+        await container.fs.readFile('node_modules/vite/package.json', 'utf-8');
+      } catch {
+        needsInstall = true;
+      }
+    }
+
+    if (!needsInstall) {
+      return;
+    }
+
+    logger.info('Installing project dependencies before starting the app');
+
+    const result = await shell.executeCommand(this.runnerId.get(), 'npm install --no-audit --no-fund', () => {
+      action.abort();
+    });
+
+    if (result?.exitCode !== 0) {
+      throw new ActionCommandError('Failed To Install Project Dependencies', result?.output || 'No Output Available');
+    }
   }
 
   async #runFileAction(action: ActionState) {

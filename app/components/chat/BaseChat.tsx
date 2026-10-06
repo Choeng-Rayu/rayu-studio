@@ -6,7 +6,7 @@ import type { JSONValue, Message } from 'ai';
 import React, { type RefCallback, useEffect, useState } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { Menu } from '~/components/sidebar/Menu.client';
-import { Workbench } from '~/components/workbench/Workbench.client';
+import { workbenchStore } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { PROVIDER_LIST } from '~/utils/constants';
 import { Messages } from './Messages.client';
@@ -36,6 +36,9 @@ import LlmErrorAlert from './LLMApiAlert';
 import type { RayuProviderStatus } from '~/lib/rayu/provider-status';
 
 const TEXTAREA_MIN_HEIGHT = 76;
+const LazyWorkbench = React.lazy(() =>
+  import('~/components/workbench/Workbench.client').then((module) => ({ default: module.Workbench })),
+);
 
 interface BaseChatProps {
   textareaRef?: React.RefObject<HTMLTextAreaElement> | undefined;
@@ -141,6 +144,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     ref,
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
+    const workbenchOpen = useStore(workbenchStore.showWorkbench);
+    const [workbenchOpened, setWorkbenchOpened] = useState(workbenchOpen);
+
+    useEffect(() => {
+      if (workbenchOpen) {
+        setWorkbenchOpened(true);
+      }
+    }, [workbenchOpen]);
+
     const [apiKeys, setApiKeys] = useState<Record<string, string>>(getApiKeysFromCookies());
     const [modelList, setModelList] = useState<ModelInfo[]>([]);
     const [isModelSettingsCollapsed, setIsModelSettingsCollapsed] = useState(false);
@@ -571,9 +583,17 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
             </div>
           </div>
           <ClientOnly>
-            {() => (
-              <Workbench chatStarted={chatStarted} isStreaming={isStreaming} setSelectedElement={setSelectedElement} />
-            )}
+            {() =>
+              workbenchOpened && (
+                <React.Suspense fallback={null}>
+                  <LazyWorkbench
+                    chatStarted={chatStarted}
+                    isStreaming={isStreaming}
+                    setSelectedElement={setSelectedElement}
+                  />
+                </React.Suspense>
+              )
+            }
           </ClientOnly>
         </div>
       </div>
