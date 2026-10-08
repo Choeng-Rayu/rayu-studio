@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadRayuUser, type StudioRayuUser, startRayuSignIn } from '~/lib/rayu-auth.client';
+import { clearDeploymentConnections } from '~/lib/stores/deploymentConnections';
 
 export function StudioAuthControl() {
   const [user, setUser] = useState<StudioRayuUser | null>(null);
@@ -37,6 +38,7 @@ export function StudioAuthControl() {
 
   const signOut = async () => {
     setLoading(true);
+    clearDeploymentConnections();
     await fetch('/api/auth/signout', { method: 'POST' }).catch(() => undefined);
     setUser(null);
     setLoading(false);

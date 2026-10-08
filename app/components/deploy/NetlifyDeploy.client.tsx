@@ -1,6 +1,13 @@
 import { toast } from 'react-toastify';
 import { useStore } from '@nanostores/react';
-import { netlifyConnection } from '~/lib/stores/netlify';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
+import {
+  getSavedDeployment,
+  readDeploymentResponse,
+  saveDeployment,
+  waitForDeployment,
+  type DeploymentResult,
+} from '~/lib/deployment.client';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { webcontainer } from '~/lib/webcontainer';
 import { path } from '~/utils/path';
@@ -11,12 +18,14 @@ import { addRayuCodeCredit, formatBuildFailureOutput, readDeployFile } from './d
 
 export function useNetlifyDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
-  const netlifyConn = useStore(netlifyConnection);
+  const connectionState = useStore(deploymentConnections);
   const currentChatId = useStore(chatId);
 
   const handleNetlifyDeploy = async () => {
-    if (!netlifyConn.user || !netlifyConn.token) {
-      toast.error('Please connect to Netlify first in the settings tab!');
+    const userId = connectionState.userId;
+
+    if (!userId || !connectionState.connections.netlify) {
+      toast.error('Connect Netlify from the Deploy menu first.');
       return false;
     }
 
@@ -143,7 +152,7 @@ export function useNetlifyDeploy() {
       await collectFiles(finalBuildPath);
 
       // Use chatId instead of artifact.id
-      const existingSiteId = localStorage.getItem(`netlify-site-${currentChatId}`);
+      const existingSiteId = getSavedDeployment(userId, 'netlify', currentChatId)?.siteId;
 
       const response = await fetch('/api/netlify-deploy', {
         method: 'POST',
@@ -154,74 +163,20 @@ export function useNetlifyDeploy() {
           siteId: existingSiteId || undefined,
           files,
           binaryFiles,
-          token: netlifyConn.token,
+          expectedUserId: userId,
           chatId: currentChatId,
         }),
       });
 
-      const data = (await response.json()) as any;
+      const data = await readDeploymentResponse<DeploymentResult>(response);
+      saveDeployment(userId, 'netlify', currentChatId, data);
 
-      if (!response.ok || !data.deploy || !data.site) {
-        console.error('Invalid deploy response:', data);
-
-        // Notify that deployment failed
-        deployArtifact.runner.handleDeployAction('deploying', 'failed', {
-          error: data.error || 'Invalid deployment response',
-          source: 'netlify',
-        });
-        throw new Error(data.error || 'Invalid deployment response');
-      }
-
-      const maxAttempts = 20; // 2 minutes timeout
-      let attempts = 0;
-      let deploymentStatus;
-
-      while (attempts < maxAttempts) {
-        const statusResponse = await fetch(
-          `https://api.netlify.com/api/v1/sites/${data.site.id}/deploys/${data.deploy.id}`,
-          {
-            headers: { Authorization: `Bearer ${netlifyConn.token}` },
-          },
-        );
-
-        if (!statusResponse.ok) {
-          throw new Error(`Netlify deployment status failed (${statusResponse.status}). Check your token permissions.`);
-        }
-
-        deploymentStatus = (await statusResponse.json()) as any;
-
-        if (deploymentStatus.state === 'ready' || deploymentStatus.state === 'uploaded') {
-          break;
-        }
-
-        if (deploymentStatus.state === 'error') {
-          const message = 'Deployment failed: ' + (deploymentStatus.error_message || 'Unknown error');
-          deployArtifact.runner.handleDeployAction('deploying', 'failed', { error: message, source: 'netlify' });
-
-          throw new Error(message);
-        }
-
-        attempts++;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      if (attempts >= maxAttempts) {
-        // Notify that deployment timed out
-        deployArtifact.runner.handleDeployAction('deploying', 'failed', {
-          error: 'Deployment timed out',
-          source: 'netlify',
-        });
-        throw new Error('Deployment timed out');
-      }
-
-      // Store the site ID if it's a new site
-      if (data.site) {
-        localStorage.setItem(`netlify-site-${currentChatId}`, data.site.id);
-      }
+      const completed = await waitForDeployment('netlify', data);
+      saveDeployment(userId, 'netlify', currentChatId, completed);
 
       // Notify that deployment completed successfully
       deployArtifact.runner.handleDeployAction('complete', 'complete', {
-        url: deploymentStatus.ssl_url || deploymentStatus.url,
+        url: completed.url || '',
         source: 'netlify',
       });
 
@@ -242,6 +197,6 @@ export function useNetlifyDeploy() {
   return {
     isDeploying,
     handleNetlifyDeploy,
-    isConnected: !!netlifyConn.user,
+    isConnected: !!connectionState.connections.netlify,
   };
 }

@@ -1,14 +1,14 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useStore } from '@nanostores/react';
-import { netlifyConnection } from '~/lib/stores/netlify';
-import { vercelConnection } from '~/lib/stores/vercel';
+import { deploymentConnections, type DeploymentProvider } from '~/lib/stores/deploymentConnections';
 import { isGitLabConnected } from '~/lib/stores/gitlabConnection';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { streamingState } from '~/lib/stores/streaming';
 import { classNames } from '~/utils/classNames';
 import { useState } from 'react';
-import { NetlifyDeploymentLink } from '~/components/chat/NetlifyDeploymentLink.client';
-import { VercelDeploymentLink } from '~/components/chat/VercelDeploymentLink.client';
+import { DeploymentLink } from './DeploymentLink';
+import { DeploymentProviderSettings } from './DeploymentProviderSettings';
+import { Dialog, DialogRoot, DialogTitle, DialogDescription } from '~/components/ui/Dialog';
 import { useVercelDeploy } from '~/components/deploy/VercelDeploy.client';
 import { useNetlifyDeploy } from '~/components/deploy/NetlifyDeploy.client';
 import { useGitHubDeploy } from '~/components/deploy/GitHubDeploy.client';
@@ -29,8 +29,10 @@ export const DeployButton = ({
   onGitHubDeploy,
   onGitLabDeploy,
 }: DeployButtonProps) => {
-  const netlifyConn = useStore(netlifyConnection);
-  const vercelConn = useStore(vercelConnection);
+  const connectionState = useStore(deploymentConnections);
+  const netlifyConnected = connectionState.status === 'ready' && !!connectionState.connections.netlify;
+  const vercelConnected = connectionState.status === 'ready' && !!connectionState.connections.vercel;
+  const [connectingProvider, setConnectingProvider] = useState<DeploymentProvider | null>(null);
   const gitlabIsConnected = useStore(isGitLabConnected);
   const [activePreviewIndex] = useState(0);
   const previews = useStore(workbenchStore.previews);
@@ -53,6 +55,12 @@ export const DeployButton = ({
   const [gitlabProjectName, setGitlabProjectName] = useState('');
 
   const handleVercelDeployClick = async () => {
+    if (!vercelConnected) {
+      setConnectingProvider('vercel');
+      return;
+    }
+
+    setConnectingProvider(null);
     setIsDeploying(true);
     setDeployingTo('vercel');
 
@@ -69,6 +77,12 @@ export const DeployButton = ({
   };
 
   const handleNetlifyDeployClick = async () => {
+    if (!netlifyConnected) {
+      setConnectingProvider('netlify');
+      return;
+    }
+
+    setConnectingProvider(null);
     setIsDeploying(true);
     setDeployingTo('netlify');
 
@@ -155,11 +169,11 @@ export const DeployButton = ({
               className={classNames(
                 'cursor-pointer flex items-center w-full px-4 py-2 text-sm text-rayu-elements-textPrimary hover:bg-rayu-elements-item-backgroundActive gap-2 rounded-md group relative',
                 {
-                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject || !netlifyConn.user,
+                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject,
                 },
               )}
-              disabled={isDeploying || !hasProject || !netlifyConn.user}
-              onClick={handleNetlifyDeployClick}
+              disabled={isDeploying || !hasProject}
+              onSelect={() => void handleNetlifyDeployClick()}
             >
               <img
                 className="w-5 h-5"
@@ -167,22 +181,21 @@ export const DeployButton = ({
                 width="24"
                 crossOrigin="anonymous"
                 src="https://cdn.simpleicons.org/netlify"
+                alt=""
               />
-              <span className="mx-auto">
-                {!netlifyConn.user ? 'No Netlify Account Connected' : 'Deploy to Netlify'}
-              </span>
-              {netlifyConn.user && <NetlifyDeploymentLink />}
+              <span className="mx-auto">{!netlifyConnected ? 'Connect Netlify' : 'Deploy to Netlify'}</span>
+              {netlifyConnected && <DeploymentLink provider="netlify" />}
             </DropdownMenu.Item>
 
             <DropdownMenu.Item
               className={classNames(
                 'cursor-pointer flex items-center w-full px-4 py-2 text-sm text-rayu-elements-textPrimary hover:bg-rayu-elements-item-backgroundActive gap-2 rounded-md group relative',
                 {
-                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject || !vercelConn.user,
+                  'opacity-60 cursor-not-allowed': isDeploying || !hasProject,
                 },
               )}
-              disabled={isDeploying || !hasProject || !vercelConn.user}
-              onClick={handleVercelDeployClick}
+              disabled={isDeploying || !hasProject}
+              onSelect={() => void handleVercelDeployClick()}
             >
               <img
                 className="w-5 h-5 bg-black p-1 rounded"
@@ -190,10 +203,10 @@ export const DeployButton = ({
                 width="24"
                 crossOrigin="anonymous"
                 src="https://cdn.simpleicons.org/vercel/white"
-                alt="vercel"
+                alt=""
               />
-              <span className="mx-auto">{!vercelConn.user ? 'No Vercel Account Connected' : 'Deploy to Vercel'}</span>
-              {vercelConn.user && <VercelDeploymentLink />}
+              <span className="mx-auto">{!vercelConnected ? 'Connect Vercel' : 'Deploy to Vercel'}</span>
+              {vercelConnected && <DeploymentLink provider="vercel" />}
             </DropdownMenu.Item>
 
             <DropdownMenu.Item
@@ -212,7 +225,7 @@ export const DeployButton = ({
                 width="24"
                 crossOrigin="anonymous"
                 src="https://cdn.simpleicons.org/github"
-                alt="github"
+                alt=""
               />
               <span className="mx-auto">Sync code to GitHub</span>
             </DropdownMenu.Item>
@@ -233,7 +246,7 @@ export const DeployButton = ({
                 width="24"
                 crossOrigin="anonymous"
                 src="https://cdn.simpleicons.org/gitlab"
-                alt="gitlab"
+                alt=""
               />
               <span className="mx-auto">
                 {!gitlabIsConnected ? 'No GitLab Account Connected' : 'Sync code to GitLab'}
@@ -250,13 +263,41 @@ export const DeployButton = ({
                 width="24"
                 crossOrigin="anonymous"
                 src="https://cdn.simpleicons.org/cloudflare"
-                alt="cloudflare"
+                alt=""
               />
               <span className="mx-auto">Deploy to Cloudflare (Coming Soon)</span>
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       </div>
+
+      <DialogRoot
+        open={connectingProvider !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConnectingProvider(null);
+          }
+        }}
+      >
+        {connectingProvider && (
+          <Dialog
+            className="max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto"
+            onClose={() => setConnectingProvider(null)}
+          >
+            <div className="p-6">
+              <DialogTitle>Connect {connectingProvider === 'netlify' ? 'Netlify' : 'Vercel'}</DialogTitle>
+              <DialogDescription className="mb-5">Publish using your own hosting account.</DialogDescription>
+              <DeploymentProviderSettings
+                key={connectingProvider}
+                provider={connectingProvider}
+                onContinue={() =>
+                  void (connectingProvider === 'netlify' ? handleNetlifyDeployClick() : handleVercelDeployClick())
+                }
+              />
+            </div>
+          </Dialog>
+        )}
+      </DialogRoot>
 
       {/* GitHub Deployment Dialog */}
       {showGitHubDeploymentDialog && githubDeploymentFiles && (

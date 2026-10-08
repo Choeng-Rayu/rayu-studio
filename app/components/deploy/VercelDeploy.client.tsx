@@ -1,6 +1,13 @@
 import { toast } from 'react-toastify';
 import { useStore } from '@nanostores/react';
-import { vercelConnection } from '~/lib/stores/vercel';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
+import {
+  getSavedDeployment,
+  readDeploymentResponse,
+  saveDeployment,
+  waitForDeployment,
+  type DeploymentResult,
+} from '~/lib/deployment.client';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { webcontainer } from '~/lib/webcontainer';
 import { path } from '~/utils/path';
@@ -11,12 +18,14 @@ import { addRayuCodeCredit, formatBuildFailureOutput, readDeployFile } from './d
 
 export function useVercelDeploy() {
   const [isDeploying, setIsDeploying] = useState(false);
-  const vercelConn = useStore(vercelConnection);
+  const connectionState = useStore(deploymentConnections);
   const currentChatId = useStore(chatId);
 
   const handleVercelDeploy = async () => {
-    if (!vercelConn.user || !vercelConn.token) {
-      toast.error('Please connect to Vercel first in the settings tab!');
+    const userId = connectionState.userId;
+
+    if (!userId || !connectionState.connections.vercel) {
+      toast.error('Connect Vercel from the Deploy menu first.');
       return false;
     }
 
@@ -189,7 +198,7 @@ export function useVercelDeploy() {
       }
 
       // Use chatId instead of artifact.id
-      const existingProjectId = localStorage.getItem(`vercel-project-${currentChatId}`);
+      const existingProjectId = getSavedDeployment(userId, 'vercel', currentChatId)?.projectId;
 
       const response = await fetch('/api/vercel-deploy', {
         method: 'POST',
@@ -202,31 +211,20 @@ export function useVercelDeploy() {
           binaryFiles,
           sourceFiles: allProjectFiles,
           binarySourceFiles: binaryProjectFiles,
-          token: vercelConn.token,
+          expectedUserId: userId,
           chatId: currentChatId,
         }),
       });
 
-      const data = (await response.json()) as any;
+      const data = await readDeploymentResponse<DeploymentResult>(response);
+      saveDeployment(userId, 'vercel', currentChatId, data);
 
-      if (!response.ok || !data.deploy || !data.project) {
-        console.error('Invalid deploy response:', data);
-
-        // Notify that deployment failed
-        deployArtifact.runner.handleDeployAction('deploying', 'failed', {
-          error: data.error || 'Invalid deployment response',
-          source: 'vercel',
-        });
-        throw new Error(data.error || 'Invalid deployment response');
-      }
-
-      if (data.project) {
-        localStorage.setItem(`vercel-project-${currentChatId}`, data.project.id);
-      }
+      const completed = await waitForDeployment('vercel', data);
+      saveDeployment(userId, 'vercel', currentChatId, completed);
 
       // Notify that deployment completed successfully
       deployArtifact.runner.handleDeployAction('complete', 'complete', {
-        url: data.deploy.url,
+        url: completed.url || '',
         source: 'vercel',
       });
 
@@ -247,6 +245,6 @@ export function useVercelDeploy() {
   return {
     isDeploying,
     handleVercelDeploy,
-    isConnected: !!vercelConn.user,
+    isConnected: !!connectionState.connections.vercel,
   };
 }

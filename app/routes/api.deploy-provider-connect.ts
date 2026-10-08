@@ -1,35 +1,47 @@
-import { json, type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { appendAuthCookies, getRayuAuth, publicOrigin } from '~/lib/.server/rayu-auth';
+import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from '@remix-run/cloudflare';
+import { callStudioBackend, studioBackendSession } from '~/lib/.server/studio-backend';
 
 const PROVIDERS = {
   netlify: 'https://api.netlify.com/api/v1/user',
   vercel: 'https://api.vercel.com/v2/user',
 } as const;
 
+export async function loader({ request, context }: LoaderFunctionArgs) {
+  const session = await studioBackendSession(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+
+  if (session instanceof Response) {
+    return session;
+  }
+
+  const response = await callStudioBackend(session, 'connections');
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const connections = (await response.json()) as Array<{ kind: string; maskedToken: string; meta: unknown }>;
+
+  return json(
+    {
+      userId: session.auth.user.id,
+      connections: connections.filter((connection) => connection.kind === 'netlify' || connection.kind === 'vercel'),
+    },
+    { headers: session.headers },
+  );
+}
+
 export async function action({ request, context }: ActionFunctionArgs) {
-  const headers = new Headers({ 'Cache-Control': 'no-store' });
-
-  if (request.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, { status: 405, headers });
+  if (request.method !== 'POST' && request.method !== 'DELETE') {
+    return json({ error: 'Method not allowed' }, { status: 405 });
   }
 
-  if (request.headers.get('Origin') !== publicOrigin(request)) {
-    return json({ error: 'Invalid request origin' }, { status: 403, headers });
+  const session = await studioBackendSession(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+
+  if (session instanceof Response) {
+    return session;
   }
 
-  let auth;
-
-  try {
-    auth = await getRayuAuth(request, context.cloudflare?.env as unknown as Record<string, unknown>);
-  } catch {
-    return json({ error: 'Rayu authentication is unavailable. Please retry.' }, { status: 503, headers });
-  }
-
-  if (!auth) {
-    return json({ error: 'Sign in to RayuCode before connecting a deploy provider.' }, { status: 401, headers });
-  }
-
-  appendAuthCookies(headers, auth.setCookies);
+  const { headers } = session;
 
   let input: { provider?: string; token?: string };
 
@@ -39,13 +51,17 @@ export async function action({ request, context }: ActionFunctionArgs) {
     return json({ error: 'Invalid request body' }, { status: 400, headers });
   }
 
-  if (input.provider !== 'netlify' && input.provider !== 'vercel') {
+  if (!input || (input.provider !== 'netlify' && input.provider !== 'vercel')) {
     return json({ error: 'Unsupported deploy provider' }, { status: 400, headers });
   }
 
-  const token = input.token?.trim();
+  if (request.method === 'DELETE') {
+    return callStudioBackend(session, `connections/${input.provider}`, { method: 'DELETE' });
+  }
 
-  if (!token || token.length > 4096) {
+  const token = typeof input.token === 'string' ? input.token.trim() : '';
+
+  if (token.length < 8 || token.length > 4096) {
     return json({ error: 'Enter a valid personal access token.' }, { status: 400, headers });
   }
 
@@ -60,7 +76,7 @@ export async function action({ request, context }: ActionFunctionArgs) {
         {
           error: `${input.provider === 'netlify' ? 'Netlify' : 'Vercel'} rejected this token. Check that it is active and has access to your account.`,
         },
-        { status: response.status, headers },
+        { status: 400, headers },
       );
     }
 
@@ -75,7 +91,22 @@ export async function action({ request, context }: ActionFunctionArgs) {
       return json({ error: 'Provider returned an unexpected account response.' }, { status: 502, headers });
     }
 
-    return json({ user }, { headers });
+    const profile = user as Record<string, unknown>;
+    const meta = Object.fromEntries(
+      ['id', 'email', 'name', 'username', 'full_name', 'avatar_url']
+        .map((key) => [key, profile[key]])
+        .filter(([, value]) => typeof value === 'string'),
+    );
+    const saved = await callStudioBackend(session, `connections/${input.provider}`, {
+      method: 'PUT',
+      body: { token, meta },
+    });
+
+    if (!saved.ok) {
+      return saved;
+    }
+
+    return json({ userId: session.auth.user.id, connection: await saved.json() }, { headers });
   } catch {
     return json({ error: 'Could not reach the provider. Check your network and retry.' }, { status: 502, headers });
   }
