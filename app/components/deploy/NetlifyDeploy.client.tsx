@@ -1,4 +1,5 @@
 import { toast } from 'react-toastify';
+import { deploymentOperation, ensureStudioProject, updateStudioProject } from '~/lib/studio-projects.client';
 import { useStore } from '@nanostores/react';
 import { deploymentConnections } from '~/lib/stores/deploymentConnections';
 import {
@@ -16,16 +17,16 @@ import type { ActionCallbackData } from '~/lib/runtime/message-parser';
 import { chatId } from '~/lib/persistence/useChatHistory';
 import { addRayuCodeCredit, formatBuildFailureOutput, readDeployFile } from './deployUtils';
 
-export function useNetlifyDeploy() {
+export function useNetlifyDeploy(provider: 'netlify' | 'cloudflare' = 'netlify') {
   const [isDeploying, setIsDeploying] = useState(false);
   const connectionState = useStore(deploymentConnections);
   const currentChatId = useStore(chatId);
 
-  const handleNetlifyDeploy = async () => {
+  const handleNetlifyDeploy = async (target?: { accountId: string; projectName: string }) => {
     const userId = connectionState.userId;
 
-    if (!userId || !connectionState.connections.netlify) {
-      toast.error('Connect Netlify from the Deploy menu first.');
+    if (!userId || connectionState.connections[provider]?.status !== 'connected') {
+      toast.error(`Connect ${provider} from the Deploy menu first.`);
       return false;
     }
 
@@ -48,19 +49,19 @@ export function useNetlifyDeploy() {
       workbenchStore.addArtifact({
         id: deploymentId,
         messageId: deploymentId,
-        title: 'Netlify Deployment',
+        title: provider === 'cloudflare' ? 'Cloudflare Pages Deployment' : 'Netlify Deployment',
         type: 'standalone',
       });
 
       const deployArtifact = workbenchStore.artifacts.get()[deploymentId];
 
       // Notify that build is starting
-      deployArtifact.runner.handleDeployAction('building', 'running', { source: 'netlify' });
+      deployArtifact.runner.handleDeployAction('building', 'running', { source: provider });
 
       // Set up build action
       const actionId = 'build-' + Date.now();
       const actionData: ActionCallbackData = {
-        messageId: 'netlify build',
+        messageId: `${provider} build`,
         artifactId: artifact.id,
         actionId,
         action: {
@@ -81,13 +82,13 @@ export function useNetlifyDeploy() {
         // Notify that build failed
         deployArtifact.runner.handleDeployAction('building', 'failed', {
           error: formatBuildFailureOutput(buildOutput?.output),
-          source: 'netlify',
+          source: provider,
         });
         throw new Error('Build failed');
       }
 
       // Notify that build succeeded and deployment is starting
-      deployArtifact.runner.handleDeployAction('deploying', 'running', { source: 'netlify' });
+      deployArtifact.runner.handleDeployAction('deploying', 'running', { source: provider });
 
       // Get the build files
       const container = await webcontainer;
@@ -152,9 +153,20 @@ export function useNetlifyDeploy() {
       await collectFiles(finalBuildPath);
 
       // Use chatId instead of artifact.id
-      const existingSiteId = getSavedDeployment(userId, 'netlify', currentChatId)?.siteId;
+      const existingSiteId = getSavedDeployment(userId, provider, currentChatId)?.siteId;
+      const studioProjectId = await ensureStudioProject(userId, currentChatId);
+      const operation = deploymentOperation(userId, studioProjectId, provider);
+      let cloudflareTarget: { accountId: string; projectName: string } | undefined;
 
-      const response = await fetch('/api/netlify-deploy', {
+      if (provider === 'cloudflare') {
+        if (!target) {
+          throw new Error('Choose your Cloudflare account and Pages project first.');
+        }
+
+        cloudflareTarget = target;
+      }
+
+      const response = await fetch(`/api/${provider}-deploy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,23 +177,39 @@ export function useNetlifyDeploy() {
           binaryFiles,
           expectedUserId: userId,
           chatId: currentChatId,
+          studioProjectId,
+          operationId: operation.id,
+          ...cloudflareTarget,
         }),
       });
 
       const data = await readDeploymentResponse<DeploymentResult>(response);
-      saveDeployment(userId, 'netlify', currentChatId, data);
+      saveDeployment(userId, provider, currentChatId, data);
+      operation.completed();
 
-      const completed = await waitForDeployment('netlify', data);
-      saveDeployment(userId, 'netlify', currentChatId, completed);
+      const bindings: Record<string, string> | undefined = cloudflareTarget
+        ? { cloudflareAccountId: cloudflareTarget.accountId!, cloudflareProjectName: cloudflareTarget.projectName! }
+        : data.siteId
+          ? { netlifySiteId: data.siteId }
+          : undefined;
+
+      if (bindings) {
+        void updateStudioProject(userId, currentChatId, { bindings }).catch(() => {
+          /* Deployment metadata already records the target. */
+        });
+      }
+
+      const completed = await waitForDeployment(provider, data);
+      saveDeployment(userId, provider, currentChatId, completed);
 
       // Notify that deployment completed successfully
       deployArtifact.runner.handleDeployAction('complete', 'complete', {
         url: completed.url || '',
-        source: 'netlify',
+        source: provider,
       });
 
       // Show success toast notification
-      toast.success(`🚀 Netlify deployment completed successfully!`);
+      toast.success(`${provider === 'cloudflare' ? 'Cloudflare Pages' : 'Netlify'} deployment completed successfully!`);
 
       return true;
     } catch (error) {
@@ -197,6 +225,6 @@ export function useNetlifyDeploy() {
   return {
     isDeploying,
     handleNetlifyDeploy,
-    isConnected: !!connectionState.connections.netlify,
+    isConnected: connectionState.connections[provider]?.status === 'connected',
   };
 }

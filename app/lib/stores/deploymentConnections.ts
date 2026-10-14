@@ -1,16 +1,29 @@
 import { atom, onMount } from 'nanostores';
 
-export type DeploymentProvider = 'netlify' | 'vercel';
+export type DeploymentProvider = 'netlify' | 'vercel' | 'cloudflare';
+export interface ConnectionProvider {
+  kind: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  ready: boolean;
+  authMethod: string;
+}
 
 export interface DeploymentConnection {
-  kind: DeploymentProvider;
+  kind: string;
   maskedToken: string;
   meta: Record<string, string | null> | null;
+  status: string;
+  revision: number;
+  authMethod: string;
 }
 
 interface DeploymentConnectionsState {
   userId: number | null;
-  connections: Partial<Record<DeploymentProvider, DeploymentConnection>>;
+  connections: Partial<Record<string, DeploymentConnection>>;
+  catalog?: ConnectionProvider[];
+  oauthError?: { provider: string; userId: number };
   status: 'idle' | 'loading' | 'ready' | 'signed-out' | 'error';
   error: string;
 }
@@ -34,6 +47,8 @@ async function readConnectionResponse(response: Response) {
     userId: number;
     connection?: DeploymentConnection;
     connections?: DeploymentConnection[];
+    catalog?: ConnectionProvider[];
+    oauthError?: { provider: string; userId: number };
     error?: string;
     code?: string;
   };
@@ -50,7 +65,7 @@ export async function refreshDeploymentConnections() {
   deploymentConnections.set({ ...deploymentConnections.get(), status: 'loading', error: '' });
 
   try {
-    const data = await readConnectionResponse(await fetch('/api/deploy-provider-connect', { cache: 'no-store' }));
+    const data = await readConnectionResponse(await fetch('/api/studio/connections', { cache: 'no-store' }));
 
     if (requestGeneration !== generation) {
       return;
@@ -59,6 +74,8 @@ export async function refreshDeploymentConnections() {
     deploymentConnections.set({
       userId: data.userId,
       connections: Object.fromEntries((data.connections ?? []).map((connection) => [connection.kind, connection])),
+      catalog: data.catalog,
+      oauthError: data.oauthError,
       status: 'ready',
       error: '',
     });
@@ -77,13 +94,13 @@ export async function refreshDeploymentConnections() {
   }
 }
 
-export async function connectDeploymentProvider(provider: DeploymentProvider, token: string) {
+export async function connectDeploymentProvider(provider: string, token: string, meta: Record<string, string> = {}) {
   const requestGeneration = ++generation;
   const data = await readConnectionResponse(
     await fetch('/api/deploy-provider-connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, token: token.trim() }),
+      body: JSON.stringify({ provider, token: token.trim(), meta, expectedUserId: deploymentConnections.get().userId }),
     }),
   );
 
@@ -95,26 +112,48 @@ export async function connectDeploymentProvider(provider: DeploymentProvider, to
   deploymentConnections.set({
     userId: data.userId,
     connections: { ...(previous.userId === data.userId ? previous.connections : {}), [provider]: data.connection },
+    catalog: previous.catalog,
     status: 'ready',
     error: '',
   });
 
+  if (provider.startsWith('ai:')) {
+    window.dispatchEvent(new Event('studio-connections-change'));
+  }
+
   // Old browser-global connections are never imported into another Rayu account.
   try {
     localStorage.removeItem(`${provider}_connection`);
-    document.cookie = `${provider === 'vercel' ? 'VITE_VERCEL_ACCESS_TOKEN' : 'netlifyToken'}=; Max-Age=0; Path=/;`;
+
+    if (provider === 'vercel' || provider === 'netlify') {
+      document.cookie = `${provider === 'vercel' ? 'VITE_VERCEL_ACCESS_TOKEN' : 'netlifyToken'}=; Max-Age=0; Path=/;`;
+    }
+
+    const legacyCookies: Record<string, string[]> = {
+      github: ['githubToken', 'git:github.com'],
+      gitlab: ['gitlabToken', 'git:gitlab.com'],
+      supabase: ['supabaseToken'],
+    };
+
+    for (const name of legacyCookies[provider] ?? []) {
+      document.cookie = `${name}=; Max-Age=0; Path=/;`;
+    }
+
+    if (provider === 'supabase') {
+      localStorage.removeItem('supabaseCredentials');
+    }
   } catch {
     // The account connection works even when browser storage is unavailable.
   }
 }
 
-export async function disconnectDeploymentProvider(provider: DeploymentProvider) {
+export async function disconnectDeploymentProvider(provider: string) {
   const requestGeneration = ++generation;
   await readConnectionResponse(
     await fetch('/api/deploy-provider-connect', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider }),
+      body: JSON.stringify({ provider, expectedUserId: deploymentConnections.get().userId }),
     }),
   );
 
@@ -126,6 +165,10 @@ export async function disconnectDeploymentProvider(provider: DeploymentProvider)
   const connections = { ...state.connections };
   delete connections[provider];
   deploymentConnections.set({ ...state, connections });
+
+  if (provider.startsWith('ai:')) {
+    window.dispatchEvent(new Event('studio-connections-change'));
+  }
 }
 
 onMount(deploymentConnections, () => {

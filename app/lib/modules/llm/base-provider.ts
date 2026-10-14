@@ -3,6 +3,7 @@ import type { ProviderInfo, ProviderConfig, ModelInfo } from './types';
 import type { IProviderSetting } from '~/types/model';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMManager } from './manager';
+import { isStudioDesktop } from '~/lib/studio-connections';
 
 /** Default timeout for model listing API calls (5 seconds) */
 const MODEL_FETCH_TIMEOUT = 5_000;
@@ -71,6 +72,11 @@ export abstract class BaseProvider implements ProviderInfo {
     defaultApiTokenKey: string;
   }) {
     const { apiKeys, providerSettings, serverEnv, defaultBaseUrlKey, defaultApiTokenKey } = options;
+
+    if (!isStudioDesktop() && providerSettings?.enabled === false) {
+      throw new Error('This provider is disabled by your administrator.');
+    }
+
     let settingsBaseUrl = providerSettings?.baseUrl;
     const manager = LLMManager.getInstance();
 
@@ -79,11 +85,13 @@ export abstract class BaseProvider implements ProviderInfo {
     }
 
     const baseUrlKey = this.config.baseUrlKey || defaultBaseUrlKey;
+    const useEnvironment =
+      isStudioDesktop() || this.name.startsWith('Rayu') || ['Ollama', 'LMStudio'].includes(this.name);
     let baseUrl =
       settingsBaseUrl ||
-      serverEnv?.[baseUrlKey] ||
-      process?.env?.[baseUrlKey] ||
-      manager.env?.[baseUrlKey] ||
+      (useEnvironment
+        ? serverEnv?.[baseUrlKey] || process?.env?.[baseUrlKey] || manager.env?.[baseUrlKey]
+        : undefined) ||
       this.config.baseUrl;
 
     if (baseUrl && baseUrl.endsWith('/')) {
@@ -92,7 +100,18 @@ export abstract class BaseProvider implements ProviderInfo {
 
     const apiTokenKey = this.config.apiTokenKey || defaultApiTokenKey;
     const apiKey =
-      apiKeys?.[this.name] || serverEnv?.[apiTokenKey] || process?.env?.[apiTokenKey] || manager.env?.[apiTokenKey];
+      apiKeys?.[this.name] ||
+      (isStudioDesktop()
+        ? serverEnv?.[apiTokenKey] || process?.env?.[apiTokenKey] || manager.env?.[apiTokenKey]
+        : undefined);
+
+    if (!isStudioDesktop() && !apiKey && !['Ollama', 'LMStudio'].includes(this.name)) {
+      if (this.name === 'Rayu API Key') {
+        throw new Error('No Rayu API key is configured. Add one in Studio settings or select Rayu account auth.');
+      }
+
+      throw new Error(`Connect ${this.name} to your Rayu account in Studio settings first.`);
+    }
 
     return {
       baseUrl,
@@ -104,6 +123,10 @@ export abstract class BaseProvider implements ProviderInfo {
     providerSettings?: Record<string, IProviderSetting>;
     serverEnv?: Record<string, string>;
   }): ModelInfo[] | null {
+    if (!isStudioDesktop() && !options.providerSettings?.[this.name]?.cacheScope) {
+      return null;
+    }
+
     if (!this.cachedDynamicModels) {
       return null;
     }
@@ -112,7 +135,7 @@ export abstract class BaseProvider implements ProviderInfo {
      * Rayu entitlements can change while the access token stays the same.
      * A cached empty result must never survive an upgrade or wallet top-up.
      */
-    if (this.name.startsWith('Rayu') && Date.now() - this.cachedDynamicModels.cachedAt > 60_000) {
+    if (Date.now() - this.cachedDynamicModels.cachedAt > (this.name.startsWith('Rayu') ? 60_000 : 300_000)) {
       this.cachedDynamicModels = undefined;
       return null;
     }
@@ -133,6 +156,16 @@ export abstract class BaseProvider implements ProviderInfo {
     providerSettings?: Record<string, IProviderSetting>;
     serverEnv?: Record<string, string>;
   }) {
+    const scope = options.providerSettings?.[this.name]?.cacheScope;
+
+    if (!isStudioDesktop()) {
+      return JSON.stringify({
+        provider: this.name,
+        scope: scope ?? 'anonymous',
+        baseUrl: options.providerSettings?.[this.name]?.baseUrl,
+      });
+    }
+
     // Only include provider-relevant env keys, not the entire server environment
     const relevantEnvKeys = [this.config.baseUrlKey, this.config.apiTokenKey].filter(Boolean) as string[];
     const relevantEnv: Record<string, string> = {};
@@ -157,6 +190,10 @@ export abstract class BaseProvider implements ProviderInfo {
     },
     models: ModelInfo[],
   ) {
+    if (!isStudioDesktop() && !options.providerSettings?.[this.name]?.cacheScope) {
+      return;
+    }
+
     if (this.name.startsWith('Rayu') && models.length === 0) {
       this.cachedDynamicModels = undefined;
       return;

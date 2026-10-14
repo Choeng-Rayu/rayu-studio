@@ -2,6 +2,8 @@ import type { LoaderFunction } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { LOCAL_PROVIDERS } from '~/lib/stores/settings';
+import { AI_CONNECTIONS, isStudioDesktop } from '~/lib/studio-connections';
+import { studioService } from '~/lib/.server/studio-service';
 
 interface ConfiguredProvider {
   name: string;
@@ -17,7 +19,28 @@ interface ConfiguredProvidersResponse {
  * API endpoint that detects which providers are configured via environment variables
  * This helps auto-enable providers that have been set up by the user
  */
-export const loader: LoaderFunction = async ({ context }) => {
+export const loader: LoaderFunction = async ({ context, request }) => {
+  if (!isStudioDesktop()) {
+    const response = await studioService(request, context, 'connections');
+
+    if (!response?.ok) {
+      return response;
+    }
+
+    const connections = (await response.json()) as Array<{ kind: string; status: string }>;
+
+    return json(
+      {
+        providers: Object.entries(AI_CONNECTIONS).map(([name, kind]) => ({
+          name,
+          isConfigured: connections.some((item) => item.kind === kind && item.status === 'connected'),
+          configMethod: 'account',
+        })),
+      },
+      { headers: response.headers },
+    );
+  }
+
   try {
     const llmManager = LLMManager.getInstance(context?.cloudflare?.env as any);
     const configuredProviders: ConfiguredProvider[] = [];

@@ -1,12 +1,13 @@
 import { atom, computed } from 'nanostores';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { logStore } from '~/lib/stores/logs';
 import { gitHubApiService } from '~/lib/services/githubApiService';
 import { calculateStatsSummary } from '~/utils/githubStats';
 import type { GitHubConnection } from '~/types/GitHub';
 
 // Auto-connect using environment variable
-const envToken = import.meta.env?.VITE_GITHUB_ACCESS_TOKEN;
+const envToken = isStudioDesktop() ? import.meta.env?.VITE_GITHUB_ACCESS_TOKEN : undefined;
 const envTokenType = import.meta.env?.VITE_GITHUB_TOKEN_TYPE;
 
 const githubConnectionAtom = atom<GitHubConnection>({
@@ -43,7 +44,7 @@ function initializeConnection() {
 }
 
 // Initialize on module load (client-side only)
-if (typeof window !== 'undefined') {
+if (isStudioDesktop() && typeof window !== 'undefined') {
   initializeConnection();
 }
 

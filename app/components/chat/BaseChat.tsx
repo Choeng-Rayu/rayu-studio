@@ -302,10 +302,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       return undefined;
     }, [provider?.name, rayuSignedIn, modelRetry, onModelsLoaded]);
 
+    useEffect(() => {
+      const changed = () => setModelRetry((value) => value + 1);
+      window.addEventListener('studio-connections-change', changed);
+
+      return () => window.removeEventListener('studio-connections-change', changed);
+    }, []);
+
     const onApiKeysChange = async (providerName: string, apiKey: string) => {
       const newApiKeys = { ...apiKeys, [providerName]: apiKey };
       setApiKeys(newApiKeys);
-      Cookies.set('apiKeys', JSON.stringify(newApiKeys));
+
+      if (isStudioDesktop()) {
+        Cookies.set('apiKeys', JSON.stringify(newApiKeys));
+      }
 
       setIsModelLoading(providerName);
 
@@ -621,3 +631,4 @@ function ScrollToBottom() {
     )
   );
 }
+import { isStudioDesktop } from '~/lib/studio-connections';

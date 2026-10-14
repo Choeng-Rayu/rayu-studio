@@ -1,4 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { StudioRepositoryDialog } from './StudioRepositoryDialog';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';
@@ -20,6 +22,20 @@ interface GitHubDeploymentDialogProps {
 }
 
 export function GitHubDeploymentDialog({ isOpen, onClose, projectName, files }: GitHubDeploymentDialogProps) {
+  return isStudioDesktop() ? (
+    <LegacyGitHubDeploymentDialog isOpen={isOpen} onClose={onClose} projectName={projectName} files={files} />
+  ) : (
+    <StudioRepositoryDialog
+      provider="github"
+      isOpen={isOpen}
+      onClose={onClose}
+      projectName={projectName}
+      files={files}
+    />
+  );
+}
+
+function LegacyGitHubDeploymentDialog({ isOpen, onClose, projectName, files }: GitHubDeploymentDialogProps) {
   const [repoName, setRepoName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

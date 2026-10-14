@@ -1,8 +1,28 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json } from '@remix-run/cloudflare';
 import { getApiKeysFromCookie } from '~/lib/api/cookies';
 import { withSecurity } from '~/lib/security';
 
 async function supabaseUserLoader({ request, context }: { request: Request; context: any }) {
+  const response = await studioService(request, context, 'supabase/projects');
+
+  if (response) {
+    if (!response.ok) {
+      return response;
+    }
+
+    const projects = (await response.json()) as unknown[];
+
+    return json(
+      {
+        user: { email: 'Connected Supabase account', role: 'Connected' },
+        stats: { projects, totalProjects: projects.length },
+      },
+      { headers: response.headers },
+    );
+  }
+
   try {
     // Get API keys from cookies (server-side only)
     const cookieHeader = request.headers.get('Cookie');
@@ -82,6 +102,28 @@ export const loader = withSecurity(supabaseUserLoader, {
 });
 
 async function supabaseUserAction({ request, context }: { request: Request; context: any }) {
+  if (!isStudioDesktop()) {
+    const form = await request.formData();
+
+    if (form.get('action') === 'get_projects') {
+      return supabaseUserLoader({ request, context });
+    }
+
+    if (form.get('action') === 'get_api_keys') {
+      const response = await studioService(request, context, 'supabase/keys', 'POST', {
+        projectId: String(form.get('projectId') ?? ''),
+      });
+
+      if (!response?.ok) {
+        return response ?? new Response('Service unavailable', { status: 503 });
+      }
+
+      return json({ apiKeys: await response.json() }, { headers: response.headers });
+    }
+
+    return json({ error: 'Unsupported operation' }, { status: 400 });
+  }
+
   try {
     const formData = await request.formData();
     const action = formData.get('action');

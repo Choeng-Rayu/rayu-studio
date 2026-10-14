@@ -1,6 +1,8 @@
 import { json } from '@remix-run/cloudflare';
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { BlockedUrlError, fetchAllowedUrl } from '~/utils/url';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { studioBackendSession } from '~/lib/.server/studio-backend';
 
 // Allowed headers to forward to the target server
 const ALLOW_HEADERS = [
@@ -44,15 +46,67 @@ const EXPOSE_HEADERS = [
 ];
 
 // Handle all HTTP methods
-export async function action({ request, params }: ActionFunctionArgs) {
+export async function action({ request, params, context }: ActionFunctionArgs) {
+  if (!isStudioDesktop()) {
+    return hostedGitProxy(request, params['*'], context);
+  }
+
   return handleProxyRequest(request, params['*']);
 }
 
-export async function loader({ request, params }: LoaderFunctionArgs) {
+export async function loader({ request, params, context }: LoaderFunctionArgs) {
+  if (!isStudioDesktop()) {
+    return hostedGitProxy(request, params['*'], context);
+  }
+
   return handleProxyRequest(request, params['*']);
 }
 
 const GIT_SERVICES = new Set(['git-upload-pack', 'git-receive-pack']);
+
+async function hostedGitProxy(request: Request, path: string | undefined, context: LoaderFunctionArgs['context']) {
+  const session = await studioBackendSession(request, context.cloudflare?.env as unknown as Record<string, unknown>);
+
+  if (session instanceof Response) {
+    return session;
+  }
+
+  const url = new URL(request.url);
+
+  if (
+    !path ||
+    !/^(github\.com|gitlab\.com)\//.test(path) ||
+    !isGitSmartHttpRequest(request.method, `/${path}`, url.searchParams)
+  ) {
+    return json({ error: 'Only supported repository requests may be proxied.' }, { status: 403 });
+  }
+
+  const headers = new Headers({ 'X-Rayu-Token': session.auth.accessToken });
+
+  for (const key of ['accept', 'content-type', 'git-protocol']) {
+    const value = request.headers.get(key);
+
+    if (value) {
+      headers.set(key, value);
+    }
+  }
+
+  try {
+    const response = await fetch(`${session.base}/studio/git-proxy/${path}${url.search}`, {
+      method: request.method,
+      headers,
+      body: request.method === 'POST' ? request.body : undefined,
+      redirect: 'error',
+      signal: AbortSignal.timeout(120_000),
+      ...(request.method === 'POST' ? { duplex: 'half' } : {}),
+    });
+    session.headers.set('Content-Type', response.headers.get('Content-Type') || 'application/octet-stream');
+
+    return new Response(response.body, { status: response.status, headers: session.headers });
+  } catch {
+    return json({ error: 'Repository service unavailable. Retry.' }, { status: 502, headers: session.headers });
+  }
+}
 
 /** Ref discovery (GET .../info/refs?service=...) or a pack exchange (POST .../git-*-pack). */
 function isGitSmartHttpRequest(method: string, pathname: string, searchParams: URLSearchParams): boolean {

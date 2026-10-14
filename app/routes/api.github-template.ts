@@ -1,3 +1,5 @@
+import { studioBackendSession } from '~/lib/.server/studio-backend';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json } from '@remix-run/cloudflare';
 import JSZip from 'jszip';
 import { base64ToBytes } from '~/components/deploy/deployUtils';
@@ -254,10 +256,19 @@ export async function loader({ request, context }: { request: Request; context: 
     return json({ error: 'Unknown starter template' }, { status: 400 });
   }
 
+  if (!isStudioDesktop()) {
+    const session = await studioBackendSession(request, context.cloudflare?.env);
+
+    if (session instanceof Response) {
+      return session;
+    }
+  }
+
   try {
     // Access environment variables from Cloudflare context or process.env
-    const githubToken =
-      context?.cloudflare?.env?.GITHUB_TOKEN || process.env.GITHUB_TOKEN || process.env.VITE_GITHUB_ACCESS_TOKEN;
+    const githubToken = isStudioDesktop()
+      ? context?.cloudflare?.env?.GITHUB_TOKEN || process.env.GITHUB_TOKEN || process.env.VITE_GITHUB_ACCESS_TOKEN
+      : undefined;
 
     let fileList;
 

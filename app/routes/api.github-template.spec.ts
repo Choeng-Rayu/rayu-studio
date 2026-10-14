@@ -1,7 +1,9 @@
 import JSZip from 'jszip';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { STARTER_TEMPLATES } from '~/utils/constants';
 import { loader } from './api.github-template';
+
+beforeEach(() => vi.stubGlobal('__STUDIO_DESKTOP__', true));
 
 afterEach(() => {
   vi.unstubAllGlobals();

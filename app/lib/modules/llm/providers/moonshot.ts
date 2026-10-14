@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
@@ -87,7 +88,7 @@ export default class MoonshotProvider extends BaseProvider {
 
       return dynamicModels;
     } catch (error) {
-      console.error(`Failed to fetch Moonshot models:`, error);
+      console.error(`Failed to fetch Moonshot models:`, studioErrorText(error));
       return [];
     }
   }

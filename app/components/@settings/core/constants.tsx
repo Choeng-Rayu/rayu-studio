@@ -1,4 +1,5 @@
 import type { TabType } from './types';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { User, Settings, Bell, Star, Database, Cloud, Laptop, Github, Wrench, List } from 'lucide-react';
 
 // GitLab icon component
@@ -50,6 +51,7 @@ export const TAB_ICONS: Record<TabType, React.ComponentType<{ className?: string
   gitlab: () => <GitLabIcon />,
   netlify: () => <NetlifyIcon />,
   vercel: () => <VercelIcon />,
+  cloudflare: Cloud,
   supabase: () => <SupabaseIcon />,
   'event-logs': List,
   mcp: Wrench,
@@ -67,6 +69,7 @@ export const TAB_LABELS: Record<TabType, string> = {
   gitlab: 'GitLab',
   netlify: 'Netlify',
   vercel: 'Vercel',
+  cloudflare: 'Cloudflare Pages',
   supabase: 'Supabase',
   'event-logs': 'Event Logs',
   mcp: 'MCP Servers',
@@ -84,6 +87,7 @@ export const TAB_DESCRIPTIONS: Record<TabType, string> = {
   gitlab: 'Connect and manage GitLab integration',
   netlify: 'Configure Netlify deployment settings',
   vercel: 'Manage Vercel projects and deployments',
+  cloudflare: 'Publish static websites to Cloudflare Pages',
   supabase: 'Setup Supabase database connection',
   'event-logs': 'View system events and logs',
   mcp: 'Configure MCP (Model Context Protocol) servers',
@@ -103,6 +107,7 @@ export const DEFAULT_TAB_CONFIG = [
   { id: 'notifications', visible: true, window: 'user' as const, order: 9 },
   { id: 'event-logs', visible: true, window: 'user' as const, order: 10 },
   { id: 'mcp', visible: true, window: 'user' as const, order: 11 },
+  ...(!isStudioDesktop() ? [{ id: 'cloudflare', visible: true, window: 'user' as const, order: 12 }] : []),
 
   // User Window Tabs (In dropdown, initially hidden)
 ];

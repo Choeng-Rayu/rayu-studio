@@ -1,7 +1,26 @@
+import { studioService } from '~/lib/.server/studio-service';
 import { json, type ActionFunction } from '@remix-run/cloudflare';
 import type { SupabaseProject } from '~/types/supabase';
 
-export const action: ActionFunction = async ({ request }) => {
+export const action: ActionFunction = async ({ request, context }) => {
+  const response = await studioService(request, context, 'supabase/projects');
+
+  if (response) {
+    if (!response.ok) {
+      return response;
+    }
+
+    const projects = (await response.json()) as SupabaseProject[];
+
+    return json(
+      {
+        user: { email: 'Connected Supabase account', role: 'Connected' },
+        stats: { projects, totalProjects: projects.length },
+      },
+      { headers: response.headers },
+    );
+  }
+
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }

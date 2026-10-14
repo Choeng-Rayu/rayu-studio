@@ -5,6 +5,7 @@ import { classNames } from '~/utils/classNames';
 import { HeaderActionButtons } from './HeaderActionButtons.client';
 import { ChatDescription } from '~/lib/persistence/ChatDescription.client';
 import { StudioAuthControl } from './StudioAuthControl.client';
+import { StudioConnectionDialog } from '~/components/deploy/StudioConnectionDialog';
 
 export function Header() {
   const chat = useStore(chatStore);
@@ -16,6 +17,7 @@ export function Header() {
         'border-rayu-elements-borderColor': chat.started,
       })}
     >
+      <ClientOnly>{() => <StudioConnectionDialog />}</ClientOnly>
       <div className="flex items-center gap-2 z-logo text-rayu-elements-textPrimary cursor-pointer">
         <div className="i-ph:sidebar-simple-duotone text-xl" />
         <a href="/" className="flex items-center">

@@ -1,3 +1,5 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json } from '@remix-run/cloudflare';
 import { gitlabApiBase, gitlabProjectPathSegment } from '~/lib/api/gitlab';
 import { withSecurity } from '~/lib/security';
@@ -22,7 +24,15 @@ interface BranchInfo {
   canPush: boolean;
 }
 
-async function gitlabBranchesLoader({ request }: { request: Request }) {
+async function gitlabBranchesLoader({ request, context }: { request: Request; context: any }) {
+  if (!isStudioDesktop()) {
+    const body = (await request.json()) as { projectId: string | number };
+    return (
+      (await studioService(request, context, 'scm/gitlab/branches', 'POST', { projectId: String(body.projectId) })) ??
+      new Response('Service unavailable', { status: 503 })
+    );
+  }
+
   try {
     const body: any = await request.json();
     const { token, gitlabUrl, projectId } = body;

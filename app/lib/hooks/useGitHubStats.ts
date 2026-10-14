@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import type { GitHubStats, GitHubConnection } from '~/types/GitHub';
 import { gitHubApiService } from '~/lib/services/githubApiService';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { useStore } from '@nanostores/react';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
 
 export interface UseGitHubStatsState {
   stats: GitHubStats | null;
@@ -27,7 +30,72 @@ export interface UseGitHubStatsReturn extends UseGitHubStatsState {
 const STATS_CACHE_KEY = 'github_stats_cache';
 const DEFAULT_CACHE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
-export function useGitHubStats(
+export const useGitHubStats = isStudioDesktop() ? useLegacyGitHubStats : useHostedGitHubStats;
+
+function useHostedGitHubStats(
+  connection: GitHubConnection | null,
+  _options: UseGitHubStatsOptions = {},
+  _isServerSide = false,
+): UseGitHubStatsReturn {
+  const owner = useStore(deploymentConnections).userId;
+  const [stats, setStats] = useState<GitHubStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    setStats(null);
+    setError(null);
+
+    if (!connection?.user || !owner) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+    void fetch('/api/github-stats', { signal: controller.signal, cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Could not load repositories. Check your connection.');
+        }
+
+        const result = (await response.json()) as GitHubStats;
+
+        if (!controller.signal.aborted && owner === deploymentConnections.get().userId) {
+          setStats(result);
+        }
+      })
+      .catch((cause: Error) => {
+        if (!controller.signal.aborted) {
+          setError(cause.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [owner, connection?.user?.login, revision]);
+
+  const refresh = async () => {
+    setRevision((value) => value + 1);
+  };
+
+  return {
+    stats,
+    isLoading: loading,
+    isRefreshing: loading,
+    error,
+    lastUpdated: null,
+    fetchStats: refresh,
+    refreshStats: refresh,
+    clearStats: () => setStats(null),
+    isStale: !stats,
+  };
+}
+
+function useLegacyGitHubStats(
   connection: GitHubConnection | null,
   options: UseGitHubStatsOptions = {},
   isServerSide: boolean = false,

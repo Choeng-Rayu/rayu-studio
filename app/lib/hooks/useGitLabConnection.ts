@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@nanostores/react';
 import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { useStudioRepositoryConnection } from './useStudioRepositoryConnection';
+import type { GitLabUserResponse } from '~/types/GitLab';
 import type { GitLabConnection } from '~/types/GitLab';
 import { useGitLabAPI } from './useGitLabAPI';
 import { gitlabConnectionStore, gitlabConnection, isGitLabConnected } from '~/lib/stores/gitlabConnection';
@@ -24,7 +27,24 @@ export interface UseGitLabConnectionReturn extends ConnectionState {
 
 const STORAGE_KEY = 'gitlab_connection';
 
-export function useGitLabConnection(): UseGitLabConnectionReturn {
+export const useGitLabConnection = isStudioDesktop() ? useLegacyGitLabConnection : useHostedGitLabConnection;
+
+function useHostedGitLabConnection(): UseGitLabConnectionReturn {
+  const result = useStudioRepositoryConnection('gitlab');
+  return {
+    ...result,
+    connection: result.user
+      ? {
+          user: result.user as unknown as GitLabUserResponse,
+          token: '',
+          tokenType: 'personal-access-token',
+          gitlabUrl: 'https://gitlab.com',
+        }
+      : null,
+  };
+}
+
+function useLegacyGitLabConnection(): UseGitLabConnectionReturn {
   const connection = useStore(gitlabConnection);
   const isConnected = useStore(isGitLabConnected);
   const [error, setError] = useState<string | null>(null);

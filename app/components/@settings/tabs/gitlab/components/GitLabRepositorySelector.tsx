@@ -33,7 +33,7 @@ export function GitLabRepositorySelector({ onClone, className }: GitLabRepositor
 
   // Fetch repositories
   const fetchRepositories = async (refresh = false) => {
-    if (!isConnected || !connection?.token) {
+    if (!isConnected || (isStudioDesktop() && !connection?.token)) {
       return;
     }
 
@@ -48,8 +48,8 @@ export function GitLabRepositorySelector({ onClone, className }: GitLabRepositor
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          token: connection.token,
-          gitlabUrl: connection.gitlabUrl || 'https://gitlab.com',
+          token: isStudioDesktop() ? connection?.token : undefined,
+          gitlabUrl: connection?.gitlabUrl || 'https://gitlab.com',
         }),
       });
 
@@ -158,7 +158,7 @@ export function GitLabRepositorySelector({ onClone, className }: GitLabRepositor
 
   // Fetch repositories when connection is ready
   useEffect(() => {
-    if (isConnected && connection?.token) {
+    if (isConnected && (!isStudioDesktop() || connection?.token)) {
       fetchRepositories();
     }
   }, [isConnected, connection?.token]);
@@ -356,3 +356,4 @@ export function GitLabRepositorySelector({ onClone, className }: GitLabRepositor
     </motion.div>
   );
 }
+import { isStudioDesktop } from '~/lib/studio-connections';

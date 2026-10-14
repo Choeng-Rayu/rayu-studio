@@ -1,13 +1,15 @@
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { atom } from 'nanostores';
 import type { VercelConnection } from '~/types/vercel';
 import { logStore } from './logs';
 import { toast } from 'react-toastify';
 
 // Auto-connect using environment variable
-const envToken = import.meta.env?.VITE_VERCEL_ACCESS_TOKEN;
+const envToken = isStudioDesktop() && import.meta.env?.VITE_VERCEL_ACCESS_TOKEN;
 
 // Initialize with stored connection or defaults
-const storedConnection = typeof window !== 'undefined' ? localStorage.getItem('vercel_connection') : null;
+const storedConnection =
+  isStudioDesktop() && typeof window !== 'undefined' ? localStorage.getItem('vercel_connection') : null;
 let initialConnection: VercelConnection;
 
 if (storedConnection) {
@@ -131,7 +133,7 @@ export async function autoConnectVercel() {
 
 export function initializeVercelConnection() {
   // Auto-connect using environment variable if available
-  const envToken = import.meta.env?.VITE_VERCEL_ACCESS_TOKEN;
+  const envToken = isStudioDesktop() && import.meta.env?.VITE_VERCEL_ACCESS_TOKEN;
 
   if (envToken && !vercelConnection.get().token) {
     updateVercelConnection({ token: envToken });

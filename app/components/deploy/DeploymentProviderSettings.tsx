@@ -1,4 +1,6 @@
 import { useState, useId } from 'react';
+import { StudioConnectionSettings } from './StudioConnectionSettings';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { useStore } from '@nanostores/react';
 import { Button } from '~/components/ui/Button';
 import { startRayuSignIn } from '~/lib/rayu-auth.client';
@@ -11,6 +13,20 @@ import {
 } from '~/lib/stores/deploymentConnections';
 
 export function DeploymentProviderSettings({
+  provider,
+  onContinue,
+}: {
+  provider: DeploymentProvider;
+  onContinue?: () => void;
+}) {
+  return isStudioDesktop() ? (
+    <LegacyDeploymentProviderSettings provider={provider} onContinue={onContinue} />
+  ) : (
+    <StudioConnectionSettings provider={provider} onContinue={onContinue} />
+  );
+}
+
+function LegacyDeploymentProviderSettings({
   provider,
   onContinue,
 }: {

@@ -116,7 +116,7 @@ export class LLMManager {
               return models;
             })
             .catch((err) => {
-              logger.error(`Error getting dynamic models ${provider.name} :`, err);
+              logger.error(`Could not load ${provider.name} models.`);
               onProviderError?.(provider.name, err);
 
               return [];
@@ -125,7 +125,9 @@ export class LLMManager {
           return dynamicModels;
         }),
     );
-    const staticModels = Array.from(this._providers.values()).flatMap((p) => p.staticModels || []);
+    const staticModels = Array.from(this._providers.values())
+      .filter((p) => enabledProviders.includes(p.name))
+      .flatMap((p) => p.staticModels || []);
     const dynamicModelsFlat = dynamicModels.flat();
     const dynamicModelKeys = dynamicModelsFlat.map((d) => `${d.name}-${d.provider}`);
     const filteredStaticModels = staticModels.filter((m) => !dynamicModelKeys.includes(`${m.name}-${m.provider}`));
@@ -133,7 +135,8 @@ export class LLMManager {
     // Combine static and dynamic models
     const modelList = [...dynamicModelsFlat, ...filteredStaticModels];
     modelList.sort((a, b) => a.name.localeCompare(b.name));
-    this._modelList = modelList;
+
+    // Account-specific dynamic catalogs belong to this request, not the singleton.
 
     return modelList;
   }
@@ -156,6 +159,10 @@ export class LLMManager {
     }
 
     const staticModels = provider.staticModels || [];
+
+    if (options.providerSettings?.[provider.name]?.enabled === false) {
+      return [];
+    }
 
     if (!provider.getDynamicModels) {
       return staticModels;
@@ -185,7 +192,7 @@ export class LLMManager {
         return models;
       })
       .catch((err) => {
-        logger.error(`Error getting dynamic models ${provider.name} :`, err);
+        logger.error(`Could not load ${provider.name} models.`);
         onProviderError?.(provider.name, err);
 
         return [];

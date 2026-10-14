@@ -1,9 +1,16 @@
+import { studioService } from '~/lib/.server/studio-service';
 import { json } from '@remix-run/cloudflare';
 import { githubTokenForRequest } from '~/lib/api/github';
 import { withSecurity } from '~/lib/security';
 import type { GitHubUserResponse, GitHubStats } from '~/types/GitHub';
 
 async function githubStatsLoader({ request, context }: { request: Request; context: any }) {
+  const hosted = await studioService(request, context, 'scm/github/stats');
+
+  if (hosted) {
+    return hosted;
+  }
+
   try {
     // The caller's own token only (never the server's template token).
     const githubToken = githubTokenForRequest(request, context);

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { IconButton } from '~/components/ui/IconButton';
 import type { ProviderInfo } from '~/types/model';
 import Cookies from 'js-cookie';
+import { AI_CONNECTIONS, isStudioDesktop } from '~/lib/studio-connections';
+import { StudioConnectionSettings } from '~/components/deploy/StudioConnectionSettings';
 
 interface APIKeyManagerProps {
   provider: ProviderInfo;
@@ -17,6 +19,10 @@ const providerEnvKeyStatusCache: Record<string, boolean> = {};
 const apiKeyMemoizeCache: { [k: string]: Record<string, string> } = {};
 
 export function getApiKeysFromCookies() {
+  if (!isStudioDesktop()) {
+    return {};
+  }
+
   const storedApiKeys = Cookies.get('apiKeys');
   let parsedKeys: Record<string, string> = {};
 
@@ -32,7 +38,16 @@ export function getApiKeysFromCookies() {
 }
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
-export const APIKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, setApiKey }) => {
+export const APIKeyManager: React.FC<APIKeyManagerProps> = (props) => {
+  const kind = AI_CONNECTIONS[props.provider.name];
+  return !isStudioDesktop() && kind ? (
+    <StudioConnectionSettings provider={kind} onContinue={() => props.setApiKey('')} />
+  ) : (
+    <LegacyApiKeyManager {...props} />
+  );
+};
+
+const LegacyApiKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, setApiKey }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
   const [isEnvKeySet, setIsEnvKeySet] = useState(false);

@@ -1,3 +1,5 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json } from '@remix-run/cloudflare';
 import { githubTokenForRequest } from '~/lib/api/github';
 import { withSecurity } from '~/lib/security';
@@ -19,6 +21,40 @@ interface BranchInfo {
 }
 
 async function githubBranchesLoader({ request, context }: { request: Request; context: any }) {
+  if (!isStudioDesktop()) {
+    const input =
+      request.method === 'POST'
+        ? ((await request.json()) as { owner: string; repo: string })
+        : Object.fromEntries(new URL(request.url).searchParams);
+    const response = await studioService(
+      request,
+      context,
+      `scm/github/branches?${new URLSearchParams({ owner: input.owner ?? '', repo: input.repo ?? '' })}`,
+    );
+
+    if (!response?.ok) {
+      return response ?? new Response('Service unavailable', { status: 503 });
+    }
+
+    const data = (await response.json()) as {
+      repo: { default_branch?: string };
+      branches: Array<{ name: string; commit: { sha: string }; protected: boolean }>;
+    };
+
+    return json(
+      {
+        ...data,
+        branches: data.branches.map((branch) => ({
+          name: branch.name,
+          sha: branch.commit.sha,
+          protected: branch.protected,
+          isDefault: branch.name === data.repo.default_branch,
+        })),
+      },
+      { headers: response.headers },
+    );
+  }
+
   try {
     let owner: string;
     let repo: string;

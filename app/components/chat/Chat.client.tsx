@@ -31,6 +31,11 @@ import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { loadRayuUser, startRayuSignIn } from '~/lib/rayu-auth.client';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
+import { chatId as studioChatId } from '~/lib/persistence/useChatHistory';
+import { ensureStudioProject, updateStudioProject } from '~/lib/studio-projects.client';
+import { AI_CONNECTIONS, isStudioDesktop } from '~/lib/studio-connections';
+import { requireStudioAIConnection } from '~/components/deploy/StudioConnectionDialog';
 
 const logger = createScopedLogger('Chat');
 
@@ -91,6 +96,7 @@ export const ChatImpl = memo(
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualProviderSelection = useRef(false);
+    const connectingAI = useRef(false);
     const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
     const latestMessagesRef = useRef(initialMessages);
     const lastSavedLengthRef = useRef(initialMessages.length);
@@ -117,6 +123,44 @@ export const ChatImpl = memo(
       const savedProvider = Cookies.get('selectedProvider');
       return (PROVIDER_LIST.find((p) => p.name === savedProvider) || DEFAULT_PROVIDER) as ProviderInfo;
     });
+    const accountConnections = useStore(deploymentConnections);
+    const currentProvider = useRef(provider.name);
+    currentProvider.current = provider.name;
+
+    const metadataChatId = useStore(studioChatId);
+    const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
+    useEffect(() => {
+      if (isStudioDesktop() || !metadataChatId || !accountConnections.userId || accountConnections.status !== 'ready') {
+        return undefined;
+      }
+
+      const owner = accountConnections.userId;
+      const timer = window.setTimeout(() => {
+        void ensureStudioProject(owner, metadataChatId, description || 'Studio project', provider.name, model)
+          .then(() =>
+            updateStudioProject(owner, metadataChatId, {
+              name: description || 'Studio project',
+              provider: provider.name,
+              model,
+              preferences: { chatMode },
+            }),
+          )
+          .catch(() => {
+            /* Metadata failures never interrupt a locally stored chat. */
+          });
+      }, 800);
+
+      return () => window.clearTimeout(timer);
+    }, [
+      metadataChatId,
+      accountConnections.userId,
+      accountConnections.status,
+      description,
+      provider.name,
+      model,
+      chatMode,
+    ]);
+
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -132,7 +176,6 @@ export const ChatImpl = memo(
     }, []);
     const [showSignInPrompt, setShowSignInPrompt] = useState(false);
     const [signInError, setSignInError] = useState('');
-    const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
 
@@ -524,7 +567,57 @@ export const ChatImpl = memo(
         return;
       }
 
-      const providerModels = availableModels?.filter((item) => item.provider === provider.name) ?? [];
+      let providerModels = availableModels?.filter((item) => item.provider === provider.name) ?? [];
+      const credentialKind = AI_CONNECTIONS[provider.name];
+      const connectionState = deploymentConnections.get();
+
+      if (
+        !isStudioDesktop() &&
+        credentialKind &&
+        (connectionState.connections[credentialKind]?.status !== 'connected' ||
+          connectionState.catalog?.find((item) => item.kind === credentialKind)?.enabled === false)
+      ) {
+        if (connectingAI.current) {
+          return;
+        }
+
+        connectingAI.current = true;
+
+        const owner = connectionState.userId;
+
+        try {
+          if (!(await requireStudioAIConnection(provider.name))) {
+            return;
+          }
+
+          if (currentProvider.current !== provider.name) {
+            return;
+          }
+
+          const response = await fetch(`/api/models/${encodeURIComponent(provider.name)}`, { cache: 'no-store' });
+
+          if (!response.ok) {
+            throw new Error('Could not load the connected provider models. Retry.');
+          }
+
+          if (owner !== null && owner !== deploymentConnections.get().userId) {
+            throw new Error('Your account changed. Retry your prompt.');
+          }
+
+          const result = (await response.json()) as { modelList: ModelInfo[] };
+          providerModels = result.modelList.filter((item) => item.provider === provider.name);
+          setAvailableModels((current) => [
+            ...(current?.filter((item) => item.provider !== provider.name) ?? []),
+            ...providerModels,
+          ]);
+        } catch (cause) {
+          toast.error(cause instanceof Error ? cause.message : 'Could not connect this provider.');
+          return;
+        } finally {
+          connectingAI.current = false;
+        }
+      }
+
       const chosenModel = providerModels.find((item) => item.name === model)?.name || providerModels[0]?.name;
 
       if (!chosenModel) {
@@ -759,7 +852,7 @@ export const ChatImpl = memo(
     );
 
     useEffect(() => {
-      const storedApiKeys = Cookies.get('apiKeys');
+      const storedApiKeys = isStudioDesktop() ? Cookies.get('apiKeys') : undefined;
 
       if (storedApiKeys) {
         setApiKeys(JSON.parse(storedApiKeys));
@@ -869,6 +962,13 @@ export const ChatImpl = memo(
           exportChat={exportChat}
           messages={renderedMessages}
           enhancePrompt={() => {
+            if (rayuSignedIn !== true) {
+              setShowSignInPrompt(true);
+              setSignInError('');
+
+              return;
+            }
+
             enhancePrompt(
               input,
               (input) => {

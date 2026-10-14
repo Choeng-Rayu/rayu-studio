@@ -30,6 +30,10 @@ const GithubLogo = () => (
 );
 
 export default function GitHubTab() {
+  return isStudioDesktop() ? <LegacyGitHubTab /> : <StudioServiceSettings provider="github" />;
+}
+
+function LegacyGitHubTab() {
   const { connection, isConnected, isLoading, error, testConnection } = useGitHubConnection();
   const {
     stats,
@@ -279,3 +283,5 @@ export default function GitHubTab() {
     </GitHubErrorBoundary>
   );
 }
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { StudioServiceSettings } from '~/components/deploy/StudioServiceSettings';

@@ -1,3 +1,4 @@
+import { studioService } from '~/lib/.server/studio-service';
 import { json } from '@remix-run/cloudflare';
 import { gitlabApiBase } from '~/lib/api/gitlab';
 import { withSecurity } from '~/lib/security';
@@ -18,7 +19,17 @@ interface GitLabProject {
   visibility: string;
 }
 
-async function gitlabProjectsLoader({ request }: { request: Request }) {
+async function gitlabProjectsLoader({ request, context }: { request: Request; context: any }) {
+  const response = await studioService(request, context, 'scm/gitlab/projects');
+
+  if (response) {
+    if (!response.ok) {
+      return response;
+    }
+
+    return json({ projects: await response.json() }, { headers: response.headers });
+  }
+
   try {
     const body: any = await request.json();
     const { token, gitlabUrl } = body;
