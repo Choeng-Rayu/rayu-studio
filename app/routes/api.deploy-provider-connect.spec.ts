@@ -7,6 +7,7 @@ vi.mock('~/lib/.server/rayu-auth', () => ({
   backendApiBase: () => 'https://backend.test/api',
   publicOrigin: (request: Request) => new URL(request.url).origin,
   appendAuthCookies: (headers: Headers) => headers,
+  readCookie: () => undefined,
 }));
 
 beforeEach(() => {
@@ -23,7 +24,7 @@ function connect(provider: string, token: string, origin = 'https://studio.rayuc
     request: new Request('https://studio.rayucode.com/api/deploy-provider-connect', {
       method: 'POST',
       headers: { Origin: origin, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, token }),
+      body: JSON.stringify({ provider, token, expectedUserId: 42 }),
     }),
     context: {},
     params: {},
@@ -40,7 +41,9 @@ describe('account deployment connections', () => {
   });
 
   it('returns an actionable error without saving rejected credentials', async () => {
-    const providerFetch = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
+    const providerFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ message: 'Credential rejected this token' }, { status: 400 }));
     vi.stubGlobal('fetch', providerFetch);
 
     const response = await connect('netlify', 'bad-token');
@@ -53,7 +56,6 @@ describe('account deployment connections', () => {
   it('saves credentials only under the authenticated Rayu account and returns metadata', async () => {
     const providerFetch = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ user: { id: 'u-1', username: 'rayu' } }))
       .mockResolvedValueOnce(Response.json({ kind: 'vercel', maskedToken: 'masked', meta: { username: 'rayu' } }));
     vi.stubGlobal('fetch', providerFetch);
 
@@ -67,10 +69,10 @@ describe('account deployment connections', () => {
     });
     expect(JSON.stringify(body)).not.toContain('secret-token');
 
-    const [url, init] = providerFetch.mock.calls[1];
+    const [url, init] = providerFetch.mock.calls[0];
     expect(url).toBe('https://backend.test/api/studio/connections/vercel');
     expect(init?.headers).toMatchObject({ Authorization: 'Bearer owner-session' });
-    expect(JSON.parse(String(init?.body))).toEqual({ token: 'secret-token', meta: { id: 'u-1', username: 'rayu' } });
+    expect(JSON.parse(String(init?.body))).toEqual({ token: 'secret-token', meta: {} });
   });
 
   it('loads only the signed-in account connection records', async () => {

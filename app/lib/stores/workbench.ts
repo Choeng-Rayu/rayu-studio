@@ -14,6 +14,9 @@ import { path } from '~/utils/path';
 import { extractRelativePath } from '~/utils/diff';
 import { description } from '~/lib/persistence';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { deploymentConnections } from './deploymentConnections';
+import { readDeploymentResponse } from '~/lib/deployment.client';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
 
@@ -696,6 +699,36 @@ export class WorkbenchStore {
     try {
       const isGitHub = provider === 'github';
       const isGitLab = provider === 'gitlab';
+
+      if (!isStudioDesktop()) {
+        const files = Object.fromEntries(
+          Object.entries(this.files.get())
+            .filter(([, file]) => file?.type === 'file')
+            .map(([path, file]) => [path.replace(/^\/home\/project\//, ''), file?.type === 'file' ? file.content : '']),
+        );
+        const state = deploymentConnections.get();
+
+        if (state.connections[provider]?.status !== 'connected') {
+          throw new Error(`Connect ${provider} from Studio settings first.`);
+        }
+
+        const result = await readDeploymentResponse<{ htmlUrl?: string; webUrl?: string }>(
+          await fetch(`/api/studio/scm/${provider}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              expectedUserId: state.userId,
+              repo: repoName,
+              files,
+              private: isPrivate,
+              branch: branchName,
+              commitMessage,
+            }),
+          }),
+        );
+
+        return result.htmlUrl || result.webUrl || '';
+      }
 
       const authToken = token || Cookies.get(isGitHub ? 'githubToken' : 'gitlabToken');
       const owner = username || Cookies.get(isGitHub ? 'githubUsername' : 'gitlabUsername');

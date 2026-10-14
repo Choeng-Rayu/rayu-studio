@@ -26,7 +26,10 @@ describe('Rayu hosted provider', () => {
     vi.useFakeTimers();
 
     const provider = new RayuHostedProvider();
-    const options = { apiKeys: { Rayu: 'session-token' } };
+    const options = {
+      apiKeys: { Rayu: 'session-token' },
+      providerSettings: { Rayu: { enabled: true, cacheScope: '42' } },
+    };
     provider.storeDynamicModels(options, []);
     expect(provider.getModelsFromCache(options)).toBeNull();
 

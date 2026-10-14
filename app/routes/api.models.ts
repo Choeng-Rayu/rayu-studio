@@ -2,7 +2,7 @@ import { json } from '@remix-run/cloudflare';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { ProviderInfo } from '~/types/model';
-import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
+import { studioCredentials } from '~/lib/.server/studio-credentials';
 import { appendAuthCookies, backendApiBase, getRayuAuth } from '~/lib/.server/rayu-auth';
 import {
   classifyRayuProvider,
@@ -62,22 +62,16 @@ export async function loader({
   const llmManager = LLMManager.getInstance(context.cloudflare?.env);
 
   // Get client side maintained API keys and provider settings from cookies
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = getApiKeysFromCookie(cookieHeader);
   let auth: Awaited<ReturnType<typeof getRayuAuth>> = null;
   let authFailed = false;
 
   try {
     auth = await getRayuAuth(request, context.cloudflare?.env as Record<string, unknown>);
-
-    if (auth) {
-      apiKeys.Rayu = auth.accessToken;
-    }
   } catch {
     authFailed = true;
   }
 
-  const providerSettings = getProviderSettingsFromCookie(cookieHeader);
+  const { apiKeys, providerSettings } = await studioCredentials(request, context.cloudflare?.env, auth);
 
   const { providers, defaultProvider } = getProviderInfo(llmManager);
 

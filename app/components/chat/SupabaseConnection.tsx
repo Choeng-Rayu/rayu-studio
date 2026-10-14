@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { StudioServiceSettings } from '~/components/deploy/StudioServiceSettings';
 import { useSupabaseConnection } from '~/lib/hooks/useSupabaseConnection';
 import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
@@ -7,6 +9,40 @@ import { fetchSupabaseStats } from '~/lib/stores/supabase';
 import { Dialog, DialogRoot, DialogClose, DialogTitle, DialogButton } from '~/components/ui/Dialog';
 
 export function SupabaseConnection() {
+  return isStudioDesktop() ? <LegacySupabaseConnection /> : <HostedSupabaseConnection />;
+}
+
+function HostedSupabaseConnection() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const show = () => setOpen(true);
+    document.addEventListener('open-supabase-connection', show);
+
+    return () => document.removeEventListener('open-supabase-connection', show);
+  }, []);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded border border-rayu-elements-borderColor px-3 py-1"
+      >
+        Supabase
+      </button>
+      <DialogRoot open={open} onOpenChange={setOpen}>
+        <Dialog onClose={() => setOpen(false)} className="max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-auto">
+          <div className="p-6">
+            <DialogTitle>Supabase connection</DialogTitle>
+            <StudioServiceSettings provider="supabase" />
+          </div>
+        </Dialog>
+      </DialogRoot>
+    </>
+  );
+}
+
+function LegacySupabaseConnection() {
   const {
     connection: supabaseConn,
     connecting,

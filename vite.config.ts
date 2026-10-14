@@ -14,6 +14,13 @@ dotenv.config();
 export default defineConfig((config) => {
   return {
     define: {
+      __STUDIO_DESKTOP__: false,
+      ...Object.fromEntries(
+        ['GITHUB', 'GITLAB', 'NETLIFY', 'VERCEL', 'SUPABASE'].map((provider) => [
+          `import.meta.env.VITE_${provider}_ACCESS_TOKEN`,
+          'undefined',
+        ]),
+      ),
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     },
     build: {

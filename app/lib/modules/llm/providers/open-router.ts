@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
@@ -79,7 +80,7 @@ export default class OpenRouterProvider extends BaseProvider {
           };
         });
     } catch (error) {
-      console.error('Error getting OpenRouter models:', error);
+      console.error('Error getting OpenRouter models:', studioErrorText(error));
       return [];
     }
   }

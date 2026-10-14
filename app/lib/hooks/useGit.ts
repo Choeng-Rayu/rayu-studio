@@ -3,9 +3,16 @@ import { useCallback, useRef, type MutableRefObject } from 'react';
 import { startWebContainer } from '~/lib/webcontainer';
 import type { GitAuth, PromiseFsClient } from 'isomorphic-git';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { toast } from 'react-toastify';
+import { requestStudioConnection } from '~/components/deploy/StudioConnectionDialog';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
 
 const lookupSavedPassword = (url: string) => {
+  if (!isStudioDesktop()) {
+    return null;
+  }
+
   const domain = url.split('/')[2];
   const gitCreds = Cookies.get(`git:${domain}`);
 
@@ -23,6 +30,10 @@ const lookupSavedPassword = (url: string) => {
 };
 
 const saveGitAuth = (url: string, auth: GitAuth) => {
+  if (!isStudioDesktop()) {
+    return;
+  }
+
   const domain = url.split('/')[2];
   Cookies.set(`git:${domain}`, JSON.stringify(auth));
 };
@@ -31,6 +42,19 @@ export function useGit() {
   const fileData = useRef<Record<string, { data: any; encoding?: string }>>({});
 
   const gitClone = useCallback(async (url: string, retryCount = 0) => {
+    if (!isStudioDesktop()) {
+      const host = new URL(url).hostname;
+      const provider = host === 'github.com' ? 'github' : host === 'gitlab.com' ? 'gitlab' : null;
+
+      if (
+        provider &&
+        deploymentConnections.get().connections[provider]?.status !== 'connected' &&
+        !(await requestStudioConnection(provider))
+      ) {
+        throw new Error('Repository connection was cancelled.');
+      }
+    }
+
     const webcontainer = await startWebContainer();
     const [{ default: git }, { default: http }] = await Promise.all([
       import('isomorphic-git'),
@@ -86,6 +110,11 @@ export function useGit() {
           console.log('Git clone progress:', event);
         },
         onAuth: (baseUrl) => {
+          if (!isStudioDesktop()) {
+            toast.error('Connect the repository provider to your Rayu account in Studio settings, then retry.');
+            return { cancel: true };
+          }
+
           let auth = lookupSavedPassword(baseUrl);
 
           if (auth) {

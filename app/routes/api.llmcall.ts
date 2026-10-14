@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/lib/.server/studio-errors';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { streamText } from '~/lib/.server/llm/stream-text';
 import type { IProviderSetting, ProviderInfo } from '~/types/model';
@@ -6,7 +7,7 @@ import { PROVIDER_LIST } from '~/utils/constants';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel } from '~/lib/.server/llm/constants';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import type { ModelInfo } from '~/lib/modules/llm/types';
-import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
+import { studioCredentials } from '~/lib/.server/studio-credentials';
 import { createScopedLogger } from '~/utils/logger';
 import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 
@@ -119,11 +120,11 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
     });
   }
 
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = getApiKeysFromCookie(cookieHeader);
-  apiKeys.Rayu = rayuAuth.accessToken;
-
-  const providerSettings = getProviderSettingsFromCookie(cookieHeader);
+  const { apiKeys, providerSettings } = await studioCredentials(
+    request,
+    context.cloudflare?.env as unknown as Record<string, unknown>,
+    rayuAuth,
+  );
 
   if (streamOutput) {
     try {
@@ -149,7 +150,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         },
       });
     } catch (error: unknown) {
-      console.log(error);
+      console.log(studioErrorText(error));
 
       if (error instanceof Error && error.message?.includes('API key')) {
         throw sessionResponse('Invalid or missing API key', {
@@ -166,13 +167,10 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
           error.message?.includes('exceeds') ||
           error.message?.includes('maximum'))
       ) {
-        throw new Response(
-          `Token limit error: ${error.message}. Try reducing your request size or using a model with higher token limits.`,
-          {
-            status: 400,
-            statusText: 'Token Limit Exceeded',
-          },
-        );
+        throw new Response('Token limit exceeded. Reduce your request size or choose a model with higher limits.', {
+          status: 400,
+          statusText: 'Token Limit Exceeded',
+        });
       }
 
       throw new Response(null, {
@@ -273,11 +271,11 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         },
       });
     } catch (error: unknown) {
-      console.log(error);
+      console.log(studioErrorText(error));
 
       const errorResponse = {
         error: true,
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        message: studioErrorText(error),
         statusCode: (error as any).statusCode || 500,
         isRetryable: (error as any).isRetryable !== false,
         provider: (error as any).provider || 'unknown',
@@ -310,7 +308,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         return sessionResponse(
           JSON.stringify({
             ...errorResponse,
-            message: `Token limit error: ${error.message}. Try reducing your request size or using a model with higher token limits.`,
+            message: 'Token limit exceeded. Reduce your request size or choose a model with higher limits.',
             statusCode: 400,
             isRetryable: false,
           }),

@@ -51,6 +51,10 @@ const SupabaseLogo = () => (
 );
 
 export default function SupabaseTab() {
+  return isStudioDesktop() ? <LegacySupabaseTab /> : <StudioServiceSettings provider="supabase" />;
+}
+
+function LegacySupabaseTab() {
   const connection = useStore(supabaseConnection);
   const connecting = useStore(isConnecting);
   const fetchingStats = useStore(isFetchingStats);
@@ -1087,3 +1091,5 @@ export default function SupabaseTab() {
     </div>
   );
 }
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { StudioServiceSettings } from '~/components/deploy/StudioServiceSettings';

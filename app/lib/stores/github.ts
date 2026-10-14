@@ -1,9 +1,11 @@
 import { atom } from 'nanostores';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import type { GitHubConnection } from '~/types/GitHub';
 import { logStore } from './logs';
 
 // Initialize with stored connection or defaults
-const storedConnection = typeof window !== 'undefined' ? localStorage.getItem('github_connection') : null;
+const storedConnection =
+  isStudioDesktop() && typeof window !== 'undefined' ? localStorage.getItem('github_connection') : null;
 const initialConnection: GitHubConnection = storedConnection
   ? JSON.parse(storedConnection)
   : {
@@ -49,7 +51,7 @@ export async function initializeGitHubConnection() {
     };
 
     // Store in localStorage for persistence
-    if (typeof window !== 'undefined') {
+    if (isStudioDesktop() && typeof window !== 'undefined') {
       localStorage.setItem('github_connection', JSON.stringify(connectionData));
     }
 
@@ -130,7 +132,7 @@ export const updateGitHubConnection = (updates: Partial<GitHubConnection>) => {
   githubConnection.set(newState);
 
   // Persist to localStorage
-  if (typeof window !== 'undefined') {
+  if (isStudioDesktop() && typeof window !== 'undefined') {
     localStorage.setItem('github_connection', JSON.stringify(newState));
   }
 };

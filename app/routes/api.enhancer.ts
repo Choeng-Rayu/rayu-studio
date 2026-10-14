@@ -1,8 +1,9 @@
+import { studioErrorText } from '~/lib/.server/studio-errors';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { streamText } from '~/lib/.server/llm/stream-text';
 import { stripIndents } from '~/utils/stripIndent';
 import type { ProviderInfo } from '~/types/model';
-import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
+import { studioCredentials } from '~/lib/.server/studio-credentials';
 import { createScopedLogger } from '~/utils/logger';
 import { appendAuthCookies, getRayuAuth } from '~/lib/.server/rayu-auth';
 
@@ -60,11 +61,11 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
     });
   }
 
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = getApiKeysFromCookie(cookieHeader);
-  apiKeys.Rayu = rayuAuth.accessToken;
-
-  const providerSettings = getProviderSettingsFromCookie(cookieHeader);
+  const { apiKeys, providerSettings } = await studioCredentials(
+    request,
+    context.cloudflare?.env as unknown as Record<string, unknown>,
+    rayuAuth,
+  );
 
   try {
     const result = await streamText({
@@ -127,12 +128,12 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
         for await (const part of result.fullStream) {
           if (part.type === 'error') {
             const error: any = part.error;
-            logger.error('Streaming error:', error);
+            logger.error('Streaming error:', studioErrorText(error));
             break;
           }
         }
       } catch (error) {
-        logger.error('Error processing stream:', error);
+        logger.error('Error processing stream:', studioErrorText(error));
       }
     })();
 
@@ -146,7 +147,7 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
       },
     });
   } catch (error: unknown) {
-    console.log(error);
+    console.log(studioErrorText(error));
 
     if (error instanceof Error && error.message?.includes('API key')) {
       throw sessionResponse('Invalid or missing API key', {

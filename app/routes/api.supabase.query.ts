@@ -1,9 +1,16 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('api.supabase.query');
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request, context }: ActionFunctionArgs) {
+  if (!isStudioDesktop()) {
+    const body = (await request.json()) as { projectId: string; query: string };
+    return studioService(request, context, 'supabase/query', 'POST', { projectId: body.projectId, query: body.query });
+  }
+
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }

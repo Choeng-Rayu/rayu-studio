@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { action, loader } from './api.git-proxy.$';
+
+beforeEach(() => vi.stubGlobal('__STUDIO_DESKTOP__', true));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -62,7 +64,7 @@ describe('git CORS proxy', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://github.com/choeng-rayu/rayu-studio.git/info/refs?service=git-upload-pack',
+      'https://github.com/rayucode/rayu-studio.git/info/refs?service=git-upload-pack',
       expect.objectContaining({ redirect: 'manual' }),
     );
   });
@@ -79,7 +81,7 @@ describe('git CORS proxy', () => {
 
     expect(response.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://github.com/choeng-rayu/rayu-studio.git/git-upload-pack',
+      'https://github.com/rayucode/rayu-studio.git/git-upload-pack',
       expect.objectContaining({ method: 'POST' }),
     );
   });

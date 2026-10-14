@@ -1,7 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loader } from './api.export-api-keys';
 
+beforeEach(() => vi.stubGlobal('__STUDIO_DESKTOP__', true));
+afterEach(() => vi.unstubAllGlobals());
+
 describe('API key export', () => {
+  it('never exports hosted account credentials or browser-global legacy keys', async () => {
+    vi.stubGlobal('__STUDIO_DESKTOP__', false);
+
+    const response = (await loader({
+      request: new Request('https://studio.example.com/api/export-api-keys', {
+        headers: { Cookie: `apiKeys=${encodeURIComponent(JSON.stringify({ OpenAI: 'private-key' }))}` },
+      }),
+      context: {},
+      params: {},
+    } as any)) as Response;
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(await response.json())).not.toContain('private-key');
+  });
   it("returns only the caller's own saved keys, never the server's provider keys", async () => {
     const savedKeys = encodeURIComponent(JSON.stringify({ OpenAI: 'sk-browser-key' }));
     const response = (await loader({

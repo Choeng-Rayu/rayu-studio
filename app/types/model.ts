@@ -15,6 +15,7 @@ export type ProviderInfo = {
 };
 
 export interface IProviderSetting {
+  cacheScope?: string;
   enabled?: boolean;
   baseUrl?: string;
   OPENAI_LIKE_API_MODELS?: string;

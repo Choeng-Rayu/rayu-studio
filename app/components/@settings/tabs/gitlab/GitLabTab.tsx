@@ -22,6 +22,10 @@ interface ConnectionTestResult {
 }
 
 export default function GitLabTab() {
+  return isStudioDesktop() ? <LegacyGitLabTab /> : <StudioServiceSettings provider="gitlab" />;
+}
+
+function LegacyGitLabTab() {
   const { connection, isConnected, isLoading, error, testConnection, refreshStats } = useGitLabConnection();
   const [connectionTest, setConnectionTest] = useState<ConnectionTestResult | null>(null);
   const [isRefreshingStats, setIsRefreshingStats] = useState(false);
@@ -303,3 +307,5 @@ export default function GitLabTab() {
     </div>
   );
 }
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { StudioServiceSettings } from '~/components/deploy/StudioServiceSettings';

@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { AI_CONNECTIONS, isStudioDesktop } from '~/lib/studio-connections';
+import { StudioConnectionSettings } from '~/components/deploy/StudioConnectionSettings';
 import { Switch } from '~/components/ui/Switch';
 import { useSettings } from '~/lib/hooks/useSettings';
 import { URL_CONFIGURABLE_PROVIDERS } from '~/lib/stores/settings';
@@ -60,6 +62,24 @@ const PROVIDER_DESCRIPTIONS: Partial<Record<ProviderName, string>> = {
 };
 
 const CloudProvidersTab = () => {
+  return isStudioDesktop() ? (
+    <LegacyCloudProvidersTab />
+  ) : (
+    <div className="space-y-6">
+      <p>Rayu uses your signed-in account. Other cloud providers use your encrypted account connections.</p>
+      {Object.entries(AI_CONNECTIONS).map(([name, kind]) => (
+        <details key={kind} className="rounded border border-rayu-elements-borderColor p-3">
+          <summary className="cursor-pointer">{name}</summary>
+          <div className="pt-3">
+            <StudioConnectionSettings provider={kind} />
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+};
+
+const LegacyCloudProvidersTab = () => {
   const settings = useSettings();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [filteredProviders, setFilteredProviders] = useState<IProviderConfig[]>([]);

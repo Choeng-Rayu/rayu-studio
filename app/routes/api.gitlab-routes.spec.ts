@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { gitlabApiBase, gitlabProjectPathSegment } from '~/lib/api/gitlab';
 import { action as branchesAction } from './api.gitlab-branches';
 import { action as projectsAction } from './api.gitlab-projects';
+
+beforeEach(() => vi.stubGlobal('__STUDIO_DESKTOP__', true));
 
 afterEach(() => vi.unstubAllGlobals());
 

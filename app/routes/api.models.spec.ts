@@ -15,6 +15,10 @@ describe('Rayu hosted model route', () => {
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
 
+      if (url.endsWith('/studio/internal/credentials/resolve')) {
+        return Response.json({ userId: 42, credentials: {} });
+      }
+
       if (url.endsWith('/me')) {
         return Response.json({ user: { id: 42, email: 'rayu@example.com' } });
       }
@@ -32,7 +36,14 @@ describe('Rayu hosted model route', () => {
         headers: { Cookie: `rayu_access=${accessToken}; rayu_refresh=refresh-token` },
       }),
       params: { provider: 'Rayu' },
-      context: { cloudflare: { env: { RAYU_BACKEND_URL: 'https://api.rayucode.com/api' } } },
+      context: {
+        cloudflare: {
+          env: {
+            RAYU_BACKEND_URL: 'https://api.rayucode.com/api',
+            RAYU_STUDIO_SERVER_SECRET: 'test-server-secret-at-least-32-characters',
+          },
+        },
+      },
     });
     const payload = (await response.json()) as {
       modelList: Array<{ name: string; label: string; provider: string }>;
@@ -58,20 +69,39 @@ describe('Rayu hosted model route', () => {
   });
 
   it('loads API-key models from the gateway when a key is configured', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
-      Response.json({
-        data: [{ id: 'model-key', label: 'Model Key', contextWindow: 128000 }],
-      }),
-    );
+    const fetchSpy = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+
+      if (url.endsWith('/me')) {
+        return Response.json({ user: { id: 42 } });
+      }
+
+      if (url.endsWith('/studio/internal/credentials/resolve')) {
+        return Response.json({
+          userId: 42,
+          credentials: { 'Rayu API Key': { token: 'rayu_sk_live_test', meta: {}, revision: 1 } },
+        });
+      }
+
+      return Response.json({ data: [{ id: 'model-key', label: 'Model Key', contextWindow: 128000 }] });
+    });
     vi.stubGlobal('fetch', fetchSpy);
 
     const keyCookie = encodeURIComponent(JSON.stringify({ 'Rayu API Key': 'rayu_sk_live_test' }));
+    const accessToken = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`;
     const response = await loader({
       request: new Request('https://studio.rayucode.com/api/models/Rayu%20API%20Key', {
-        headers: { Cookie: `apiKeys=${keyCookie}` },
+        headers: { Cookie: `apiKeys=${keyCookie}; rayu_access=${accessToken}; rayu_refresh=test-refresh` },
       }),
       params: { provider: 'Rayu API Key' },
-      context: { cloudflare: { env: { RAYU_GATEWAY_URL: 'https://gateway.rayucode.com' } } },
+      context: {
+        cloudflare: {
+          env: {
+            RAYU_GATEWAY_URL: 'https://gateway.rayucode.com',
+            RAYU_STUDIO_SERVER_SECRET: 'test-server-secret-at-least-32-characters',
+          },
+        },
+      },
     });
     const payload = (await response.json()) as { modelList: Array<{ name: string; provider: string }> };
     expect(payload.modelList).toEqual([expect.objectContaining({ name: 'model-key', provider: 'Rayu API Key' })]);

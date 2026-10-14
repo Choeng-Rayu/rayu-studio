@@ -1,4 +1,6 @@
-import { atom } from 'nanostores';
+import { atom, onMount } from 'nanostores';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { deploymentConnections } from './deploymentConnections';
 import type { SupabaseUser, SupabaseStats, SupabaseApiKey, SupabaseCredentials } from '~/types/supabase';
 
 export interface SupabaseProject {
@@ -58,8 +60,8 @@ const storage =
     ? globalThis.localStorage
     : null;
 
-const savedConnection = storage ? storage.getItem('supabase_connection') : null;
-const savedCredentials = storage ? storage.getItem('supabaseCredentials') : null;
+const savedConnection = isStudioDesktop() && storage ? storage.getItem('supabase_connection') : null;
+const savedCredentials = isStudioDesktop() && storage ? storage.getItem('supabaseCredentials') : null;
 
 const initialState: SupabaseConnectionState = savedConnection
   ? JSON.parse(savedConnection)
@@ -82,6 +84,22 @@ if (savedCredentials && !initialState.credentials) {
 
 export const supabaseConnection = atom<SupabaseConnectionState>(initialState);
 
+if (!isStudioDesktop()) {
+  onMount(supabaseConnection, () => {
+    let owner: number | null = null;
+    return deploymentConnections.subscribe((state) => {
+      if (owner !== state.userId || !state.connections.supabase) {
+        owner = state.userId;
+        supabaseConnection.set({
+          user: null,
+          token: '',
+          isConnected: state.connections.supabase?.status === 'connected',
+        });
+      }
+    });
+  });
+}
+
 export const isConnecting = atom(false);
 export const isFetchingStats = atom(false);
 export const isFetchingApiKeys = atom(false);
@@ -91,6 +109,11 @@ if (initialState.token && !initialState.stats) {
 }
 
 export function updateSupabaseConnection(connection: Partial<SupabaseConnectionState>) {
+  if (!isStudioDesktop()) {
+    supabaseConnection.set({ ...supabaseConnection.get(), ...connection, token: '' });
+    return;
+  }
+
   const currentState = supabaseConnection.get();
 
   if (connection.user !== undefined || connection.token !== undefined) {
@@ -144,6 +167,10 @@ export function updateSupabaseConnection(connection: Partial<SupabaseConnectionS
 }
 
 export function initializeSupabaseConnection() {
+  if (!isStudioDesktop()) {
+    return;
+  }
+
   // Auto-connect using environment variable if available
   const envToken = import.meta.env?.VITE_SUPABASE_ACCESS_TOKEN;
 

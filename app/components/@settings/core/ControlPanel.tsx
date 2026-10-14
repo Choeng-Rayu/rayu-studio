@@ -24,6 +24,7 @@ import { EventLogsTab } from '~/components/@settings/tabs/event-logs/EventLogsTa
 import GitHubTab from '~/components/@settings/tabs/github/GitHubTab';
 import GitLabTab from '~/components/@settings/tabs/gitlab/GitLabTab';
 import SupabaseTab from '~/components/@settings/tabs/supabase/SupabaseTab';
+import { StudioConnectionSettings } from '~/components/deploy/StudioConnectionSettings';
 import CloudProvidersTab from '~/components/@settings/tabs/providers/cloud/CloudProvidersTab';
 import LocalProvidersTab from '~/components/@settings/tabs/providers/local/LocalProvidersTab';
 import McpTab from '~/components/@settings/tabs/mcp/McpTab';
@@ -148,6 +149,8 @@ export const ControlPanel = ({ open, onClose }: ControlPanelProps) => {
         return <VercelTab />;
       case 'netlify':
         return <NetlifyTab />;
+      case 'cloudflare':
+        return <StudioConnectionSettings provider="cloudflare" />;
       case 'event-logs':
         return <EventLogsTab />;
       case 'mcp':

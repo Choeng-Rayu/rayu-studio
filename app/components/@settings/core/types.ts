@@ -15,6 +15,7 @@ export type TabType =
   | 'gitlab'
   | 'netlify'
   | 'vercel'
+  | 'cloudflare'
   | 'supabase'
   | 'event-logs'
   | 'mcp';
@@ -78,6 +79,7 @@ export const TAB_LABELS: Record<TabType, string> = {
   gitlab: 'GitLab',
   netlify: 'Netlify',
   vercel: 'Vercel',
+  cloudflare: 'Cloudflare Pages',
   supabase: 'Supabase',
   'event-logs': 'Event Logs',
   mcp: 'MCP Servers',

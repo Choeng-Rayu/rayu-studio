@@ -1,10 +1,10 @@
+import { studioErrorText } from '~/lib/.server/studio-errors';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { createDataStream, generateId } from 'ai';
 import { MAX_RESPONSE_SEGMENTS, MAX_TOKENS, type FileMap } from '~/lib/.server/llm/constants';
 import { CONTINUE_PROMPT } from '~/lib/common/prompts/prompts';
 import { streamText, type Messages, type StreamingOptions } from '~/lib/.server/llm/stream-text';
 import SwitchableStream from '~/lib/.server/llm/switchable-stream';
-import type { IProviderSetting } from '~/types/model';
 import { createScopedLogger } from '~/utils/logger';
 import { getFilePaths, selectContext } from '~/lib/.server/llm/select-context';
 import type { ContextAnnotation, ProgressAnnotation } from '~/types/context';
@@ -21,24 +21,6 @@ export async function action(args: ActionFunctionArgs) {
 }
 
 const logger = createScopedLogger('api.chat');
-
-function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {};
-
-  const items = cookieHeader.split(';').map((cookie) => cookie.trim());
-
-  items.forEach((item) => {
-    const [name, ...rest] = item.split('=');
-
-    if (name && rest) {
-      const decodedName = decodeURIComponent(name.trim());
-      const decodedValue = decodeURIComponent(rest.join('=').trim());
-      cookies[decodedName] = decodedValue;
-    }
-  });
-
-  return cookies;
-}
 
 async function chatAction({ context, request }: ActionFunctionArgs) {
   let rayuAuth;
@@ -86,12 +68,10 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       maxLLMSteps: number;
     }>();
 
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}') as Record<string, string>;
-  apiKeys.Rayu = rayuAuth.accessToken;
-
-  const providerSettings: Record<string, IProviderSetting> = JSON.parse(
-    parseCookies(cookieHeader || '').providers || '{}',
+  const { apiKeys, providerSettings } = await studioCredentials(
+    request,
+    context.cloudflare?.env as unknown as Record<string, unknown>,
+    rayuAuth,
   );
 
   const stream = new SwitchableStream();
@@ -310,7 +290,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               for await (const part of result.fullStream) {
                 if (part.type === 'error') {
                   const error: any = part.error;
-                  logger.error(`${error}`);
+                  logger.error(studioErrorText(error));
 
                   return;
                 }
@@ -351,7 +331,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
             if (part.type === 'error') {
               const error: any = part.error;
-              logger.error('Streaming error:', error);
+              logger.error('Streaming error:', studioErrorText(error));
               streamRecovery.stop();
 
               // Enhanced error handling for common streaming issues
@@ -400,7 +380,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           return 'Custom error: Network error. Please check your internet connection and try again.';
         }
 
-        return `Custom error: ${errorMessage}`;
+        return studioErrorText(error);
       },
     }).pipeThrough(
       new TransformStream({
@@ -455,11 +435,11 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       headers,
     });
   } catch (error: any) {
-    logger.error(error);
+    logger.error(studioErrorText(error));
 
     const errorResponse = {
       error: true,
-      message: error.message || 'An unexpected error occurred',
+      message: studioErrorText(error),
       statusCode: error.statusCode || 500,
       isRetryable: error.isRetryable !== false, // Default to retryable unless explicitly false
       provider: error.provider || 'unknown',
@@ -488,3 +468,4 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     });
   }
 }
+import { studioCredentials } from '~/lib/.server/studio-credentials';

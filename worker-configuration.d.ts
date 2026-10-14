@@ -20,6 +20,7 @@ interface Env {
   PERPLEXITY_API_KEY: string;
   AWS_BEDROCK_CONFIG: string;
   RAYU_BACKEND_URL: string;
+  RAYU_STUDIO_SERVER_SECRET: string;
   VITE_RAYU_BACKEND_URL: string;
   RAYU_GATEWAY_URL: string;
   RAYU_STUDIO_AUTH_BRIDGE_URL: string;

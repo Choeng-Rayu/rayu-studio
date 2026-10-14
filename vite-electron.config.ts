@@ -19,6 +19,7 @@ const getGitHash = () => {
 export default defineConfig((config) => {
   return {
     define: {
+      __STUDIO_DESKTOP__: true,
       __COMMIT_HASH: JSON.stringify(getGitHash()),
       __APP_VERSION: JSON.stringify(process.env.npm_package_version),
     },

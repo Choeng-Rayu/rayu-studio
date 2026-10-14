@@ -1,4 +1,5 @@
 import { toast } from 'react-toastify';
+import { deploymentOperation, ensureStudioProject, updateStudioProject } from '~/lib/studio-projects.client';
 import { useStore } from '@nanostores/react';
 import { deploymentConnections } from '~/lib/stores/deploymentConnections';
 import {
@@ -199,6 +200,8 @@ export function useVercelDeploy() {
 
       // Use chatId instead of artifact.id
       const existingProjectId = getSavedDeployment(userId, 'vercel', currentChatId)?.projectId;
+      const studioProjectId = await ensureStudioProject(userId, currentChatId);
+      const operation = deploymentOperation(userId, studioProjectId, 'vercel');
 
       const response = await fetch('/api/vercel-deploy', {
         method: 'POST',
@@ -213,11 +216,23 @@ export function useVercelDeploy() {
           binarySourceFiles: binaryProjectFiles,
           expectedUserId: userId,
           chatId: currentChatId,
+          studioProjectId,
+          operationId: operation.id,
         }),
       });
 
       const data = await readDeploymentResponse<DeploymentResult>(response);
       saveDeployment(userId, 'vercel', currentChatId, data);
+      operation.completed();
+
+      if (data.projectId) {
+        await updateStudioProject(userId, currentChatId, { bindings: { vercelProjectId: data.projectId } }).catch(
+          () => {
+            // Publishing succeeded; central deployment history still contains the target.
+            console.warn('Could not update Studio project resource metadata.');
+          },
+        );
+      }
 
       const completed = await waitForDeployment('vercel', data);
       saveDeployment(userId, 'vercel', currentChatId, completed);

@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModelV1 } from 'ai';
@@ -111,7 +112,7 @@ export default class ZaiProvider extends BaseProvider {
         };
       });
     } catch (error) {
-      console.error(`Failed to fetch dynamic models for ${this.name}:`, error);
+      console.error(`Failed to fetch dynamic models for ${this.name}:`, studioErrorText(error));
       return [];
     }
   }
@@ -145,7 +146,7 @@ export default class ZaiProvider extends BaseProvider {
 
       return `${base64Url(header)}.${base64Url(payload)}.${signature}`;
     } catch (error) {
-      console.error(`Failed to generate JWT token for ${this.name}:`, error);
+      console.error(`Failed to generate JWT token for ${this.name}:`, studioErrorText(error));
       throw new Error(`Failed to generate JWT token: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

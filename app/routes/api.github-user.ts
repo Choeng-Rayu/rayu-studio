@@ -1,8 +1,16 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json } from '@remix-run/cloudflare';
 import { githubTokenForRequest } from '~/lib/api/github';
 import { withSecurity } from '~/lib/security';
 
 async function githubUserLoader({ request, context }: { request: Request; context: any }) {
+  const hosted = await studioService(request, context, 'scm/github/user');
+
+  if (hosted) {
+    return hosted;
+  }
+
   try {
     // The caller's own token only (never the server's template token).
     const githubToken = githubTokenForRequest(request, context);
@@ -61,6 +69,28 @@ export const loader = withSecurity(githubUserLoader, {
 });
 
 async function githubUserAction({ request, context }: { request: Request; context: any }) {
+  if (!isStudioDesktop()) {
+    const input = request.headers.get('Content-Type')?.includes('application/json')
+      ? ((await request.json()) as Record<string, string>)
+      : Object.fromEntries(await request.formData());
+
+    if (!['get_repos', 'get_user'].includes(String(input.action))) {
+      return json({ error: 'Unsupported repository operation' }, { status: 400 });
+    }
+
+    const response = await studioService(
+      request,
+      context,
+      input.action === 'get_user' ? 'scm/github/user' : 'scm/github/repos',
+    );
+
+    if (!response?.ok || input.action === 'get_user') {
+      return response ?? new Response('Service unavailable', { status: 503 });
+    }
+
+    return json({ repos: await response.json() }, { headers: response.headers });
+  }
+
   try {
     let action: string | null = null;
     let repoFullName: string | null = null;

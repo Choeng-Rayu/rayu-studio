@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
@@ -111,7 +112,7 @@ export default class GithubProvider extends BaseProvider {
         console.warn('GitHub: API request failed with status:', response.status, response.statusText);
       }
     } catch (error) {
-      console.warn('GitHub: Failed to fetch models, using static models:', error);
+      console.warn('GitHub: Failed to fetch models, using static models:', studioErrorText(error));
     }
 
     // Fallback to static models
@@ -143,7 +144,7 @@ export default class GithubProvider extends BaseProvider {
       throw new Error(`Missing API key for ${this.name} provider`);
     }
 
-    console.log(`GitHub: Using API key (first 8 chars): ${apiKey.substring(0, 8)}...`);
+    console.log('GitHub: Using the configured account credential');
 
     const openai = createOpenAI({
       baseURL: 'https://models.github.ai/inference',

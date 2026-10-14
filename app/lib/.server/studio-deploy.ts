@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { callStudioBackend, studioBackendSession } from './studio-backend';
 
-type Provider = 'netlify' | 'vercel';
+type Provider = 'netlify' | 'vercel' | 'cloudflare';
 
 function relativeFiles(value: unknown): Record<string, string> | undefined {
   if (value === undefined) {
@@ -48,13 +48,17 @@ export async function deployAction(provider: Provider, { request, context }: Act
       files: relativeFiles(input.files) ?? {},
       binaryFiles: relativeFiles(input.binaryFiles),
       chatId: input.chatId,
+      studioProjectId: input.studioProjectId,
+      operationId: input.operationId,
       ...(provider === 'netlify'
         ? { siteId: input.siteId }
-        : {
-            projectId: input.projectId,
-            sourceFiles: relativeFiles(input.sourceFiles),
-            binarySourceFiles: relativeFiles(input.binarySourceFiles),
-          }),
+        : provider === 'cloudflare'
+          ? { accountId: input.accountId, projectName: input.projectName }
+          : {
+              projectId: input.projectId,
+              sourceFiles: relativeFiles(input.sourceFiles),
+              binarySourceFiles: relativeFiles(input.binarySourceFiles),
+            }),
     };
   } catch (error) {
     return Response.json(

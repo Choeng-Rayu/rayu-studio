@@ -1,6 +1,19 @@
+import { studioService } from '~/lib/.server/studio-service';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { json, type ActionFunctionArgs } from '@remix-run/cloudflare';
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request, context }: ActionFunctionArgs) {
+  if (!isStudioDesktop()) {
+    const body = (await request.json()) as { projectId: string };
+    const response = await studioService(request, context, 'supabase/keys', 'POST', { projectId: body.projectId });
+
+    if (!response?.ok) {
+      return response ?? new Response('Service unavailable', { status: 503 });
+    }
+
+    return json({ apiKeys: await response.json() }, { headers: response.headers });
+  }
+
   try {
     // Add proper type assertion for the request body
     const body = (await request.json()) as { projectId?: string; token?: string };

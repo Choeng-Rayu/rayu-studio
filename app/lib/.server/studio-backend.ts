@@ -38,6 +38,7 @@ export async function callStudioBackend(
       headers: { Authorization: `Bearer ${session.auth.accessToken}`, 'Content-Type': 'application/json' },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       cache: 'no-store',
+      redirect: 'error',
       signal: AbortSignal.timeout(120_000),
     });
     const payload = (await response.json().catch(() => null)) as { message?: unknown; error?: unknown } | null;

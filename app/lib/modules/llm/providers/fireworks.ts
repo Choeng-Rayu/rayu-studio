@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
@@ -113,7 +114,7 @@ export default class FireworksProvider extends BaseProvider {
 
       return dynamicModels;
     } catch (error) {
-      console.error(`Failed to fetch Fireworks models:`, error);
+      console.error(`Failed to fetch Fireworks models:`, studioErrorText(error));
       return [];
     }
   }

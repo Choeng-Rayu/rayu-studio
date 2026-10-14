@@ -1,3 +1,5 @@
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { deploymentConnections } from '~/lib/stores/deploymentConnections';
 import { toast } from 'react-toastify';
 import { useStore } from '@nanostores/react';
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -14,9 +16,13 @@ export function useGitLabDeploy() {
   const currentChatId = useStore(chatId);
 
   const handleGitLabDeploy = async () => {
-    const connection = getLocalStorage('gitlab_connection');
+    const connection = isStudioDesktop() ? getLocalStorage('gitlab_connection') : null;
 
-    if (!connection?.token || !connection?.user) {
+    if (
+      isStudioDesktop()
+        ? !connection?.token || !connection?.user
+        : deploymentConnections.get().connections.gitlab?.status !== 'connected'
+    ) {
       toast.error('Please connect your GitLab account in Settings > Connections first');
       return false;
     }
@@ -169,6 +175,8 @@ export function useGitLabDeploy() {
   return {
     isDeploying,
     handleGitLabDeploy,
-    isConnected: !!getLocalStorage('gitlab_connection')?.user,
+    isConnected: isStudioDesktop()
+      ? !!getLocalStorage('gitlab_connection')?.user
+      : deploymentConnections.get().connections.gitlab?.status === 'connected',
   };
 }

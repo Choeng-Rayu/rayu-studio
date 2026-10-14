@@ -1,3 +1,4 @@
+import { studioErrorText } from '~/utils/studio-errors';
 import { BaseProvider, getOpenAILikeModel } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
@@ -58,7 +59,7 @@ export default class OpenAILikeProvider extends BaseProvider {
         maxTokenAllowed: 8000,
       }));
     } catch (error) {
-      logger.info(`${this.name}: Could not fetch /models endpoint, checking fallback env`, error);
+      logger.info(`${this.name}: Could not fetch /models endpoint, checking fallback env`, studioErrorText(error));
 
       // Fallback to OPENAI_LIKE_API_MODELS if available
       // eslint-disable-next-line dot-notation
@@ -118,7 +119,7 @@ export default class OpenAILikeProvider extends BaseProvider {
 
       return models;
     } catch (error) {
-      logger.error(`${this.name}: Error parsing OPENAI_LIKE_API_MODELS:`, error);
+      logger.error(`${this.name}: Error parsing OPENAI_LIKE_API_MODELS:`, studioErrorText(error));
       return [];
     }
   }

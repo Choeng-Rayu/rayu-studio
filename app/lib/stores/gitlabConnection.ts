@@ -1,12 +1,13 @@
 import { atom, computed } from 'nanostores';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
 import { logStore } from '~/lib/stores/logs';
 import { GitLabApiService } from '~/lib/services/gitlabApiService';
 import { calculateStatsSummary } from '~/utils/gitlabStats';
 import type { GitLabConnection, GitLabStats } from '~/types/GitLab';
 
 // Auto-connect using environment variable
-const envToken = import.meta.env?.VITE_GITLAB_ACCESS_TOKEN;
+const envToken = isStudioDesktop() ? import.meta.env?.VITE_GITLAB_ACCESS_TOKEN : undefined;
 
 const gitlabConnectionAtom = atom<GitLabConnection>({
   user: null,
@@ -41,7 +42,7 @@ function initializeConnection() {
 }
 
 // Initialize on module load (client-side only)
-if (typeof window !== 'undefined') {
+if (isStudioDesktop() && typeof window !== 'undefined') {
   initializeConnection();
 }
 

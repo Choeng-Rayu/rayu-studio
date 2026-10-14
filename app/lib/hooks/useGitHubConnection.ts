@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@nanostores/react';
 import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
+import { isStudioDesktop } from '~/lib/studio-connections';
+import { useStudioRepositoryConnection } from './useStudioRepositoryConnection';
 import type { GitHubUserResponse, GitHubConnection } from '~/types/GitHub';
 import { useGitHubAPI } from './useGitHubAPI';
 import { githubConnection, isConnecting, updateGitHubConnection } from '~/lib/stores/github';
@@ -24,7 +26,19 @@ export interface UseGitHubConnectionReturn extends ConnectionState {
 
 const STORAGE_KEY = 'github_connection';
 
-export function useGitHubConnection(): UseGitHubConnectionReturn {
+export const useGitHubConnection = isStudioDesktop() ? useLegacyGitHubConnection : useHostedGitHubConnection;
+
+function useHostedGitHubConnection(): UseGitHubConnectionReturn {
+  const result = useStudioRepositoryConnection('github');
+  return {
+    ...result,
+    connection: result.user
+      ? { user: result.user as unknown as GitHubUserResponse, token: '', tokenType: 'classic' }
+      : null,
+  };
+}
+
+function useLegacyGitHubConnection(): UseGitHubConnectionReturn {
   const connection = useStore(githubConnection);
   const connecting = useStore(isConnecting);
   const [error, setError] = useState<string | null>(null);
