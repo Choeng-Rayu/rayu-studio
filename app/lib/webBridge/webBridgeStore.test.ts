@@ -14,6 +14,7 @@ const client = vi.hoisted(() => ({
   connected: true,
   connect: vi.fn(async () => undefined),
   disconnect: vi.fn(),
+  refreshAndReconnect: vi.fn(async (): Promise<void> => undefined),
   onLifecycle: vi.fn(() => () => undefined),
   toolDecision: vi.fn(() => true),
   planDecision: vi.fn(() => true),
@@ -196,5 +197,41 @@ describe('plan and question approvals', () => {
 
     expect(client.questionAnswer).toHaveBeenCalledWith('q1', { 'Which?': 'One' }, undefined);
     expect(store.pendingQuestion.get()).toBeNull();
+  });
+});
+
+describe('remote page lifecycle', () => {
+  it('offers retry after a token refresh fails without an unhandled rejection', async () => {
+    client.refreshAndReconnect.mockRejectedValueOnce(new Error('network unavailable'));
+    emit(BRIDGE_EVENT.TOKEN_EXPIRED, {});
+    await Promise.resolve();
+
+    expect(store.connectionState.get()).toBe('error');
+    expect(store.bridgeError.get()).toContain('Retry');
+  });
+
+  it('does not restore connected state when the page left during connection', async () => {
+    store.stopWebBridge();
+
+    const connection = Promise.withResolvers<undefined>();
+    client.connect.mockReturnValueOnce(connection.promise);
+
+    const starting = store.startWebBridge();
+    store.stopWebBridge();
+    connection.resolve(undefined);
+    await starting;
+
+    expect(store.connectionState.get()).toBe('idle');
+  });
+
+  it('clears private machine and conversation state when leaving remote', () => {
+    store.messageHistory.set([{ type: 'text', content: 'private worker output', ts: Date.now() }]);
+    store.streamingContent.set('private live output');
+    store.stopWebBridge();
+
+    expect(store.connectedSessions.get()).toEqual([]);
+    expect(store.attachedSessionId.get()).toBeNull();
+    expect(store.messageHistory.get()).toEqual([]);
+    expect(store.streamingContent.get()).toBe('');
   });
 });

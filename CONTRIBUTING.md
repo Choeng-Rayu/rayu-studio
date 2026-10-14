@@ -87,14 +87,10 @@ Interested in maintaining and growing the project? Fill out our [Contributor App
   pnpm install
   ```
 - Set up environment variables:
-  1. Rename `.env.example` to `.env.local`.
-  2. Add your API keys:
-     ```bash
-     GROQ_API_KEY=XXX
-     HuggingFace_API_KEY=XXX
-     OPENAI_API_KEY=XXX
-     ...
-     ```
+  1. Copy `.env.example` to `.env.local` (keep the example file).
+  2. Set the Rayu service URLs and the server-only `RAYU_STUDIO_SERVER_SECRET`,
+     matching rayu-backend. Connect user AI/service providers through Studio
+     Settings; configure service OAuth applications in the existing Rayu admin.
   3. Optionally set:
      - Debug level: `VITE_LOG_LEVEL=debug`
      - Context size: `DEFAULT_NUM_CTX=32768`
@@ -232,7 +228,9 @@ The `docker-compose.yaml` configuration is compatible with **VS Code Dev Contain
 
 Ensure `.env.local` is configured correctly with:
 
-- API keys.
+- Rayu backend/gateway/auth bridge URLs.
+- `RAYU_STUDIO_SERVER_SECRET`, identical to the backend (never a `VITE_` setting).
+- No shared user provider API keys or service access tokens.
 - Context-specific configurations.
 
 Example for the `DEFAULT_NUM_CTX` variable:

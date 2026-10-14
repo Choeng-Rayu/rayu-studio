@@ -1,4 +1,4 @@
-import { studioErrorText } from '~/lib/.server/studio-errors';
+import { studioErrorText } from '~/utils/studio-errors';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { createDataStream, generateId } from 'ai';
 import { MAX_RESPONSE_SEGMENTS, MAX_TOKENS, type FileMap } from '~/lib/.server/llm/constants';

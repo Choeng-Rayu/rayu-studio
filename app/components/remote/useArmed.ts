@@ -11,13 +11,16 @@ export const APPROVAL_ARM_DELAY_MS = 500;
  * click of a double-click approves a request nobody has read. Each card is keyed by its
  * callId, so every new request starts disarmed.
  */
-export function useArmed(delayMs: number = APPROVAL_ARM_DELAY_MS): boolean {
+export function useArmed(delayMs: number = APPROVAL_ARM_DELAY_MS, requestId?: string | null): boolean {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
+    setArmed(false);
+
     const timer = setTimeout(() => setArmed(true), delayMs);
+
     return () => clearTimeout(timer);
-  }, [delayMs]);
+  }, [delayMs, requestId]);
 
   return armed;
 }

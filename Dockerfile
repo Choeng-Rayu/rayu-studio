@@ -13,16 +13,14 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 RUN apt-get update && apt-get install -y --no-install-recommends git \
   && rm -rf /var/lib/apt/lists/*
 
-# Accept (optional) build-time public URL for Remix/Vite (Coolify can pass it)
-ARG VITE_PUBLIC_APP_URL
-ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
-
 # Browser-side Rayu backend URL (Web Bridge socket on /remote). Vite inlines VITE_*
 # values at build time, and .env files are not in the build context, so a Coolify
 # "build variable" only reaches `pnpm run build` if it is declared here. Empty keeps
 # the default (https://api.rayucode.com/api).
 ARG VITE_RAYU_BACKEND_URL
 ENV VITE_RAYU_BACKEND_URL=${VITE_RAYU_BACKEND_URL}
+ARG VITE_LOG_LEVEL=info
+ENV VITE_LOG_LEVEL=${VITE_LOG_LEVEL}
 
 # Install deps efficiently
 COPY package.json pnpm-lock.yaml* ./
@@ -55,8 +53,8 @@ ENV VITE_LOG_LEVEL=${VITE_LOG_LEVEL} \
     DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX} \
     RUNNING_IN_DOCKER=true
 
-# Note: API keys should be provided at runtime via docker run -e or docker-compose
-# Example: docker run -e OPENAI_API_KEY=your_key_here ...
+# User provider credentials belong in account connections, not container env.
+# Supply RAYU_STUDIO_SERVER_SECRET and Rayu service URLs at runtime only.
 
 RUN mkdir -p /app/run
 CMD ["pnpm", "run", "dev", "--host"]
@@ -71,7 +69,7 @@ ENV PORT=5173
 ENV HOST=0.0.0.0
 
 # Non-sensitive build arguments
-ARG VITE_LOG_LEVEL=debug
+ARG VITE_LOG_LEVEL=info
 ARG DEFAULT_NUM_CTX
 
 # Set non-sensitive environment variables
@@ -80,8 +78,8 @@ ENV WRANGLER_SEND_METRICS=false \
     DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX} \
     RUNNING_IN_DOCKER=true
 
-# Note: API keys should be provided at runtime via docker run -e or docker-compose
-# Example: docker run -e OPENAI_API_KEY=your_key_here ...
+# User provider credentials belong in account connections, not container env.
+# Supply RAYU_STUDIO_SERVER_SECRET and Rayu service URLs at runtime only.
 
 # Install curl for healthchecks, plus the system CA store. The slim base image
 # ships none, and workerd (unlike Node, which bundles its own CAs) verifies TLS
@@ -96,6 +94,7 @@ COPY --from=prod-deps /app/build /app/build
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/package.json /app/package.json
 COPY --from=prod-deps /app/bindings.sh /app/bindings.sh
+COPY --from=prod-deps /app/scripts/runtime-bindings.mjs /app/scripts/runtime-bindings.mjs
 
 # Pre-configure wrangler to disable metrics
 RUN mkdir -p /root/.config/.wrangler && \

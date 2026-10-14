@@ -1,4 +1,7 @@
 interface Env {
+  // Hosted infrastructure is explicitly allowlisted in scripts/runtime-bindings.mjs.
+  // Provider credential fields below remain for the shared Electron adapters only;
+  // they are not forwarded to the hosted worker or used as hosted fallback keys.
   RUNNING_IN_DOCKER: Settings;
   DEFAULT_NUM_CTX: Settings;
   ANTHROPIC_API_KEY: string;
@@ -24,6 +27,6 @@ interface Env {
   VITE_RAYU_BACKEND_URL: string;
   RAYU_GATEWAY_URL: string;
   RAYU_STUDIO_AUTH_BRIDGE_URL: string;
-  // Optional. Raises GitHub's 60 req/hour anonymous limit for starter-template imports.
+  // Legacy desktop starter-template credential; not a shared hosted token.
   GITHUB_TOKEN: string;
 }

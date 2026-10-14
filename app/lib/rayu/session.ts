@@ -5,8 +5,12 @@ import { studioHome } from './routes';
 export async function getAccessToken(): Promise<string | null> {
   const response = await fetch('/api/auth/access-token', { cache: 'no-store' });
 
-  if (!response.ok) {
+  if (response.status === 401 || response.status === 403) {
     return null;
+  }
+
+  if (!response.ok) {
+    throw new StudioRequestError('Rayu sign-in is temporarily unavailable. Please try again.', response.status);
   }
 
   const payload = (await response.json()) as { accessToken?: string };

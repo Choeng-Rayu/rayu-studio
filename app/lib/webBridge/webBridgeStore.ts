@@ -122,6 +122,8 @@ export function getAttachedSession(): WebBridgeSession | null {
  */
 let bound = false;
 let unbind: Array<() => void> = [];
+let generation = 0;
+let lifecycleBound = false;
 
 /**
  * Connect and start applying server events to the store.
@@ -131,6 +133,8 @@ let unbind: Array<() => void> = [];
  * running session; `stopWebBridge` is the explicit close.
  */
 export async function startWebBridge(): Promise<void> {
+  const connectionGeneration = generation;
+
   if (!bound) {
     bindHandlers();
     bound = true;
@@ -140,21 +144,34 @@ export async function startWebBridge(): Promise<void> {
 
   try {
     await webBridgeClient.connect();
+
+    if (!bound || generation !== connectionGeneration) {
+      return;
+    }
+
     connectionState.set('connected');
     bindLifecycle();
   } catch (error) {
+    if (!bound || generation !== connectionGeneration) {
+      return;
+    }
+
     connectionState.set('error');
     bridgeError.set(error instanceof Error ? error.message : 'Could not reach the bridge');
+    bindLifecycle();
   }
 }
 
 export function stopWebBridge(): void {
+  generation++;
+
   for (const off of unbind) {
     off();
   }
 
   unbind = [];
   bound = false;
+  lifecycleBound = false;
   webBridgeClient.disconnect();
   connectionState.set('idle');
 
@@ -163,17 +180,29 @@ export function stopWebBridge(): void {
    * return they could offer Allow/Deny for decisions nobody is waiting on.
    */
   keepApprovals(() => false);
+  connectedSessions.set([]);
+  attachedSessionId.set(null);
+  messageHistory.set([]);
+  streamingContent.set('');
+  streamingThinking.set('');
+  isStreaming.set(false);
+  bridgeError.set(null);
 }
 
 function bindLifecycle(): void {
+  if (lifecycleBound) {
+    return;
+  }
+
+  lifecycleBound = true;
   unbind.push(
     webBridgeClient.onLifecycle({
       connect: () => {
         connectionState.set('connected');
         bridgeError.set(null);
       },
-      disconnect: () => {
-        connectionState.set('reconnecting');
+      disconnect: (reason) => {
+        connectionState.set(reason === 'io server disconnect' ? 'error' : 'reconnecting');
 
         /*
          * A dropped socket says nothing about the CLI — it kept working. Clearing
@@ -368,7 +397,14 @@ function bindHandlers(): void {
        * now is what makes token rotation invisible to the user.
        */
       connectionState.set('reconnecting');
-      void webBridgeClient.refreshAndReconnect();
+
+      const refreshGeneration = generation;
+      void webBridgeClient.refreshAndReconnect().catch(() => {
+        if (bound && generation === refreshGeneration) {
+          connectionState.set('error');
+          bridgeError.set('Could not refresh your Studio sign-in. Retry the connection.');
+        }
+      });
     }),
 
     webBridgeClient.on(BRIDGE_EVENT.BRIDGE_ERROR, (payload) => {

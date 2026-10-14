@@ -142,7 +142,7 @@ export function RemoteChat(): React.JSX.Element {
           <span aria-hidden="true" className="i-ph:terminal-window-duotone text-4xl text-rayu-elements-textTertiary" />
           <h2 className="mt-3 text-base font-semibold text-rayu-elements-textPrimary">Pick a machine</h2>
           <p className="mt-1 text-sm text-rayu-elements-textSecondary">
-            Choose a session on the left to see its recent messages and start driving it from here.
+            Choose a session from Machines to see its recent messages and start driving it from here.
           </p>
         </div>
       </div>
@@ -150,7 +150,7 @@ export function RemoteChat(): React.JSX.Element {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {session && (
         <header className="flex items-center gap-3 px-4 py-2.5 border-b border-rayu-elements-borderColor shrink-0">
           <div className="min-w-0">

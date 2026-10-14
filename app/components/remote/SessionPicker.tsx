@@ -109,7 +109,7 @@ export function SessionPicker(): React.JSX.Element {
   return (
     <aside
       aria-label="Connected machines"
-      className="w-[280px] shrink-0 border-r border-rayu-elements-borderColor flex flex-col bg-rayu-elements-background-depth-1"
+      className="w-full md:w-[280px] max-h-[40vh] md:max-h-none overflow-y-auto shrink-0 border-b md:border-b-0 md:border-r border-rayu-elements-borderColor flex flex-col bg-rayu-elements-background-depth-1"
     >
       <div className="px-4 py-3 border-b border-rayu-elements-borderColor">
         <h2 className="text-sm font-semibold text-rayu-elements-textPrimary">Machines</h2>
@@ -118,15 +118,33 @@ export function SessionPicker(): React.JSX.Element {
             ? `${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`
             : 'Connecting to the bridge…'}
         </p>
+        <details open={sessions.length === 0} className="mt-3 text-xs text-rayu-elements-textSecondary leading-relaxed">
+          <summary className="cursor-pointer font-medium text-rayu-elements-textPrimary">Connect a machine</summary>
+          <div className="mt-3 space-y-3">
+            <div>
+              <p className="font-medium text-rayu-elements-textPrimary">Connect with a QR code</p>
+              <code className="mt-1 block font-mono text-rayu-elements-textPrimary">/web-bridge pair</code>
+              <p className="mt-1">
+                Run this in rayu-cli or Rayucode. Scan the QR code with your phone camera, sign in to Studio, then
+                approve the machine. You can also open the pairing link. The QR code expires after 5 minutes.
+              </p>
+            </div>
+            <div>
+              <p className="font-medium text-rayu-elements-textPrimary">Connect with your account</p>
+              <code className="mt-1 block font-mono text-rayu-elements-textPrimary">/web-bridge</code>
+              <p className="mt-1">
+                Sign in to the same Rayu account on the machine and in Studio, then run this command.
+              </p>
+            </div>
+            <p>Select the machine below after it connects. Run /web-bridge off on the machine to disconnect.</p>
+          </div>
+        </details>
       </div>
 
       {sessions.length === 0 ? (
         <div className="flex-1 px-4 py-6 text-xs text-rayu-elements-textSecondary leading-relaxed">
           <p className="font-medium text-rayu-elements-textPrimary">No machines yet</p>
-          <p className="mt-2">
-            Run <code className="font-mono text-rayu-elements-textPrimary">/web-bridge</code> in rayu-cli. Signed-in
-            machines connect directly; others show a QR code you can scan to approve here.
-          </p>
+          <p className="mt-2">Choose a connection option above to add your machine.</p>
         </div>
       ) : (
         <ul className="flex-1 overflow-y-auto p-2 space-y-1 modern-scrollbar">

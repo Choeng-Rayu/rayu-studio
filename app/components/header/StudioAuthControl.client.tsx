@@ -37,12 +37,25 @@ export function StudioAuthControl() {
   };
 
   const signOut = async () => {
+    setError('');
     setLoading(true);
+    window.dispatchEvent(new Event('rayu-auth-signout'));
     clearDeploymentConnections();
-    await fetch('/api/auth/signout', { method: 'POST' }).catch(() => undefined);
-    setUser(null);
-    setLoading(false);
-    window.dispatchEvent(new Event('rayu-auth-change'));
+
+    try {
+      const response = await fetch('/api/auth/signout', { method: 'POST' });
+
+      if (!response.ok) {
+        throw new Error('Could not sign out. Please try again. Remote control has been stopped.');
+      }
+
+      setUser(null);
+      window.dispatchEvent(new Event('rayu-auth-change'));
+    } catch {
+      setError('Could not sign out. Please try again. Remote control has been stopped.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading) {
@@ -69,6 +82,11 @@ export function StudioAuthControl() {
 
   return (
     <div className="flex items-center gap-2">
+      {error && (
+        <span role="alert" className="max-w-40 text-xs text-red-400">
+          {error}
+        </span>
+      )}
       <span
         className="max-w-40 truncate text-xs text-rayu-elements-textSecondary"
         title={user.email || user.displayName || ''}

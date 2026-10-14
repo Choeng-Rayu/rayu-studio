@@ -155,14 +155,18 @@ This option requires Docker and is great when you want an isolated environment o
 
 1. **Prepare Environment Variables**
 
-   Copy the provided examples and add your provider keys:
+   Copy the hosted Studio template and configure the Rayu service URLs and server secret:
 
    ```bash
    cp .env.example .env
    cp .env.example .env.local
    ```
 
-   The runtime scripts inside the container source `.env` and `.env.local`, so keep any API keys you need in one of those files.
+   Set `RAYU_STUDIO_SERVER_SECRET` to the same server-only value as rayu-backend.
+   Users connect providers in Studio Settings; provider keys and OAuth application
+   secrets belong in the backend database, not in these files. For Compose build
+   variables stored in `.env.local`, pass both files with
+   `docker compose --env-file .env --env-file .env.local ...`.
 
 2. **Build an Image**
 
@@ -264,27 +268,27 @@ The Local Providers tab manages local AI installations and custom endpoints:
 - **OpenAI-like**: Connect to any OpenAI-compatible API endpoint
 - **Auto-detection**: The system automatically detects environment variables for base URLs
 
-### Environment Variables vs UI Configuration
+### Hosted Studio configuration
 
-RayuCode supports both methods for maximum flexibility:
+Use `.env.example` for local development and `.env.production` for public production
+defaults. Only Rayu service URLs, the server-only `RAYU_STUDIO_SERVER_SECRET`, and
+optional infrastructure settings belong in the hosted environment. Keep the server
+secret identical to rayu-backend and configure it through Coolify/Cloudflare runtime
+secrets; never commit it or prefix it with `VITE_`.
 
-#### Environment Variables (Recommended for Production)
-Set API keys and base URLs in your `.env.local` file:
-```bash
-# API Keys
-OPENAI_API_KEY=your_openai_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
+`VITE_RAYU_BACKEND_URL` is public, build-time configuration for Remote/Web Bridge;
+keep it pointed at the same backend as the server-side `RAYU_BACKEND_URL`.
 
-# Custom Base URLs
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-LMSTUDIO_BASE_URL=http://127.0.0.1:1234
-```
+Users connect AI providers and service integrations through Studio Settings. Keys
+are encrypted in the existing backend database, scoped to the signed-in account,
+and never returned as plaintext by the connection API. Superadmins register service
+OAuth applications in the existing Rayu admin. Do not put shared user provider
+keys, Google client secrets, database credentials, or `RAYU_PROVIDER_SECRET` in Studio.
 
-#### UI-Based Configuration
-- **Real-time Updates**: Changes take effect immediately
-- **Secure Storage**: API keys are stored securely in browser cookies
-- **Visual Feedback**: Clear indicators show configuration status
-- **Easy Management**: Edit, view, and manage keys through the interface
+Electron's existing per-device credential adapters remain supported. Their legacy
+environment/key settings are not the configuration for the centrally hosted website.
+Optional Ollama/LM Studio endpoints still refer to the machine running the Studio
+server (or desktop app), not a hosted website user's laptop.
 
 ### Provider-Specific Features
 

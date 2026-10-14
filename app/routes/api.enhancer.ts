@@ -1,4 +1,4 @@
-import { studioErrorText } from '~/lib/.server/studio-errors';
+import { studioErrorText } from '~/utils/studio-errors';
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { streamText } from '~/lib/.server/llm/stream-text';
 import { stripIndents } from '~/utils/stripIndent';

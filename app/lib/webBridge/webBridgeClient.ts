@@ -42,14 +42,20 @@ class WebBridgeClient {
    * the page has already navigated away from.
    */
   private _closed = false;
+  private _generation = 0;
+  private _cancelConnect: (() => void) | null = null;
 
   /** Open the connection, or resolve immediately if it is already open. */
   async connect(): Promise<void> {
     if (!this._socket?.connected) {
       if (!this._connecting) {
         this._closed = false;
-        this._connecting = this._open().finally(() => {
-          this._connecting = null;
+
+        const generation = this._generation;
+        this._connecting = this._open(generation).finally(() => {
+          if (generation === this._generation) {
+            this._connecting = null;
+          }
         });
       }
 
@@ -57,8 +63,12 @@ class WebBridgeClient {
     }
   }
 
-  private async _open(): Promise<void> {
+  private async _open(generation: number): Promise<void> {
     const token = await getAccessToken();
+
+    if (this._closed || generation !== this._generation) {
+      throw new Error('Remote connection was cancelled');
+    }
 
     if (!token) {
       /*
@@ -70,9 +80,24 @@ class WebBridgeClient {
       throw new Error('Not signed in');
     }
 
+    this._socket?.removeAllListeners();
+    this._socket?.disconnect();
+
     const socket = io(`${bridgeOrigin()}${WEB_BRIDGE_NAMESPACE}`, {
       path: WEB_BRIDGE_WS_PATH,
-      auth: { token },
+      auth: (done: (credentials: object) => void) => {
+        void getAccessToken()
+          .then((fresh) => {
+            if (!this._closed && generation === this._generation) {
+              done({ token: fresh ?? '' });
+            }
+          })
+          .catch(() => {
+            if (!this._closed && generation === this._generation) {
+              done({ token: '' });
+            }
+          });
+      },
 
       /*
        * WebSocket only. The polling fallback would issue a long-poll per event and,
@@ -89,26 +114,20 @@ class WebBridgeClient {
     this._socket = socket;
     this._rebindListeners();
 
-    /*
-     * Refresh the handshake token before every reconnection attempt. This is the
-     * mechanism behind "let the JWT expire and the browser reconnects with no
-     * visible interruption".
-     */
-    socket.io.on('reconnect_attempt', () => {
-      void getAccessToken().then((fresh) => {
-        if (fresh) {
-          socket.auth = { token: fresh };
-        }
-      });
-    });
+    // The auth callback waits for refresh before Socket.IO sends the handshake.
 
     return new Promise<void>((resolve, reject) => {
-      const onConnect = () => {
+      const cleanup = () => {
+        socket.off('connect', onConnect);
         socket.off('connect_error', onError);
+        this._cancelConnect = null;
+      };
+      const onConnect = () => {
+        cleanup();
         resolve();
       };
       const onError = (error: Error) => {
-        socket.off('connect', onConnect);
+        cleanup();
 
         /*
          * A rejected handshake is not retried blindly: the backend disconnects an
@@ -119,6 +138,11 @@ class WebBridgeClient {
       };
       socket.once('connect', onConnect);
       socket.once('connect_error', onError);
+
+      this._cancelConnect = () => {
+        cleanup();
+        reject(new Error('Remote connection was cancelled'));
+      };
     });
   }
 
@@ -135,10 +159,17 @@ class WebBridgeClient {
     }
 
     const socket = this._socket;
+    const generation = this._generation;
     const token = await getAccessToken();
 
+    if (this._closed || generation !== this._generation || socket !== this._socket) {
+      return;
+    }
+
     if (!token) {
+      this.disconnect();
       redirectToSignIn();
+
       return;
     }
 
@@ -147,7 +178,6 @@ class WebBridgeClient {
       return;
     }
 
-    socket.auth = { token };
     socket.disconnect();
 
     if (!this._closed) {
@@ -157,6 +187,10 @@ class WebBridgeClient {
 
   disconnect(): void {
     this._closed = true;
+    this._generation++;
+    this._cancelConnect?.();
+    this._connecting = null;
+    this._socket?.removeAllListeners();
     this._socket?.disconnect();
     this._socket = null;
   }

@@ -5,9 +5,13 @@ services:
       context: .
       dockerfile: Dockerfile
       target: rayu-ai-production
+      args:
+        VITE_RAYU_BACKEND_URL: ${VITE_RAYU_BACKEND_URL:-}
+        VITE_LOG_LEVEL: ${VITE_LOG_LEVEL:-info}
     ports:
       - '5173:5173'
-    env_file: 
+    # Infrastructure settings only; users connect providers through Studio.
+    env_file:
       - '.env'
       - '.env.local'
     environment:
@@ -15,19 +19,6 @@ services:
       - COMPOSE_PROFILES=production
       # No strictly needed but serving as hints for Coolify
       - PORT=5173
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - HuggingFace_API_KEY=${HuggingFace_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY}
-      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
-      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL}
-      - XAI_API_KEY=${XAI_API_KEY}
-      - TOGETHER_API_KEY=${TOGETHER_API_KEY}
-      - TOGETHER_API_BASE_URL=${TOGETHER_API_BASE_URL}
-      - AWS_BEDROCK_CONFIG=${AWS_BEDROCK_CONFIG}
-      - VITE_LOG_LEVEL=${VITE_LOG_LEVEL:-debug}
-      - DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX:-32768}
       - RUNNING_IN_DOCKER=true
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -41,7 +32,10 @@ services:
       context: .
       dockerfile: Dockerfile
       target: development
-    env_file: 
+      args:
+        VITE_RAYU_BACKEND_URL: ${VITE_RAYU_BACKEND_URL:-}
+    # Infrastructure settings only; users connect providers through Studio.
+    env_file:
       - '.env'
       - '.env.local'
     environment:
@@ -52,19 +46,6 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - PORT=5173
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - HuggingFace_API_KEY=${HuggingFace_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY}
-      - XAI_API_KEY=${XAI_API_KEY}
-      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
-      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL}
-      - TOGETHER_API_KEY=${TOGETHER_API_KEY}
-      - TOGETHER_API_BASE_URL=${TOGETHER_API_BASE_URL}
-      - AWS_BEDROCK_CONFIG=${AWS_BEDROCK_CONFIG}
-      - VITE_LOG_LEVEL=${VITE_LOG_LEVEL:-debug}
-      - DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX:-32768}
       - RUNNING_IN_DOCKER=true
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -81,6 +62,9 @@ services:
 
   app-prebuild:
     image: ghcr.io/rayucode/rayu-studio:latest
+    env_file:
+      - '.env'
+      - '.env.local'
     ports:
       - '5173:5173'
     environment:
@@ -88,8 +72,6 @@ services:
       - COMPOSE_PROFILES=production
       # No strictly needed but serving as hints for Coolify
       - PORT=5173
-      - OLLAMA_API_BASE_URL=http://127.0.0.1:11434
-      - DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX:-32768}
       - RUNNING_IN_DOCKER=true
     extra_hosts:
       - 'host.docker.internal:host-gateway'
